@@ -92,7 +92,14 @@ Window {
         const a = Appearance.notifyAnchors
         Surface.setPosition(win, a,
                             (a & 1) ? Appearance.notifyMarginY : 0,
-                            (a & 8) ? Appearance.notifyMarginX : 0,
+                            /* Same expression as the initLayerShell call above,
+                               and for the same reason: with slideTravel set the
+                               surface already reaches the screen edge and the
+                               margin is folded into the layout. Passing the
+                               margin here too re-applied it on every settings
+                               change, shifting the whole surface a margin's
+                               width inward until the next restart. */
+                            (a & 8) ? (win.slideRight ? 0 : Appearance.notifyMarginX) : 0,
                             (a & 2) ? Appearance.notifyMarginY : 0,
                             (a & 4) ? Appearance.notifyMarginX : 0)
     }
