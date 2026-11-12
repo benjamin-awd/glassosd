@@ -138,6 +138,24 @@ Item {
         y: Style.slideTravel > 0 ? 0 : (1.0 - root.reveal) * Style.animRise
     }
 
+    /* A card that is destroyed without finishing its exit — Clear all, an
+       app replacing its own notification, the model being reset — never
+       reaches the reveal < 0.15 branch below, so its contribution stayed in
+       the window's aggregate. The region is the union of every contribution,
+       so the leftovers blur and lift a patch of backdrop where no card is
+       drawn: invisible over a dark window, a grey slab over a white one.
+       Observed as 320x308 of region for one 84px card. */
+    Component.onDestruction: {
+        const w = Window.window
+        if (!w)
+            return
+        Surface.clearPanelRegion(w, card)
+        for (let i = 0; i < sheets.count; ++i) {
+            const s = sheets.itemAt(i)
+            if (s) Surface.clearPanelRegion(w, s)
+        }
+    }
+
     /* Set once the blur region has been dropped, so it is not dropped again on
        every remaining frame of the exit. */
     property bool blurDropped: false
@@ -433,7 +451,7 @@ Item {
            wedge is what a stack of rounded cards actually looks like; the
            mismatched shapes were something else entirely. */
         flatBottom: false
-        implicitHeight: body.implicitHeight + Style.padding * 2
+        implicitHeight: body.implicitHeight + Style.notifyPadding * 2
 
         Component.onCompleted: refreshBlur()
         onWidthChanged: refreshBlur()
