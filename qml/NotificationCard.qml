@@ -245,7 +245,22 @@ Item {
         }
     }
 
-    onSwipeXChanged: refreshRegions()
+    /* Deferred, not immediate. refreshBlur() reads mapToItem(), which goes
+       through this item's `transform` — and that Translate's x is a separate
+       binding on swipeX. QML does not promise it has been re-evaluated by the
+       time this handler runs, and it has not: measured mid-drag, every region
+       was registered one change behind the card.
+
+       While the finger is moving that is invisible, because the next change
+       corrects it. On release it is not: endSwipe() assigns swipeRaw = 0 in a
+       single step, so there is no next change, and the region is left a whole
+       gesture behind — parked at the tanh saturation, Style.swipeTravel (40px)
+       to the left of the card, blurring a slab of backdrop where no card is
+       drawn. Qt.callLater runs it after the binding pass, so mapToItem sees
+       the transform the card is actually drawn with, and it coalesces to one
+       call per turn rather than one per property write. */
+    onSwipeXChanged: Qt.callLater(refreshRegions)
+
     layer.effect: MultiEffect {
         shadowEnabled: true
         shadowColor: Style.shadowColor
@@ -479,14 +494,34 @@ Item {
             onWheel: (event) => {
                 const dx = event.pixelDelta.x !== 0 ? event.pixelDelta.x
                                                     : event.angleDelta.x / 8
-                if (dx === 0 && event.phase !== 7 /* ScrollEnd */)
+                /* Qt::ScrollEnd is 3; this compared against 7, which no phase
+                   ever equals, so the branch below was dead code. Nothing
+                   ended a gesture but the fallback timer, and a zero-delta
+                   event returned above without re-arming it. */
+                const ending = event.phase === Qt.ScrollEnd
+
+                /* The momentum tail arrives after the fingers are already up.
+                   Once the gesture has ended it must not begin a new one, or
+                   the card is dragged back out just after it has sprung home.
+                   Not the cause of the blur-region halo — that was the
+                   mapToItem lag above — but the same dead constant left this
+                   unguarded, so it is fixed while the branch is live. */
+                if (event.phase === Qt.ScrollMomentum && !gesturing)
                     return
+
+                if (dx === 0 && !ending) {
+                    /* Still inside the gesture. Keep the fallback armed
+                       rather than letting it expire mid-flight. */
+                    if (gesturing)
+                        idle.restart()
+                    return
+                }
                 if (!gesturing) {
                     gesturing = true
                     root.hoverChanged(true)
                 }
                 root.swipeRaw += dx
-                if (event.phase === 7 /* ScrollEnd */) {
+                if (ending) {
                     gesturing = false
                     root.releaseVelocity = 0
                     root.endSwipe()
