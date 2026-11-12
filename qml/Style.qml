@@ -344,4 +344,11 @@ QtObject {
        where it is and lets the fade do the work, which is what a surface that
        stops short of the screen edge has to do. */
     readonly property int slideTravel: Math.round(tnum("motion.slideTravel", 0))
+
+    /* The reveal value at which a leaving card gives its blur region back.
+       Compositor blur is binary, so whenever it is dropped the backdrop
+       changes in one step; the card's own fill is what hides that step, and
+       the card is most opaque at the start of the exit. See the tuning note
+       in NotificationCard.onRevealChanged. */
+    readonly property real blurDropAt: tnum("motion.blurDropAt", 0.15)
 }

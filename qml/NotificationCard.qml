@@ -172,15 +172,37 @@ Item {
            in it, and it outlives the card by another frame or two while the
            region update makes its way to the compositor.
 
-           0.15 rather than 0 because the exit accelerates (InQuint): by the
-           time reveal is this low the card is nearly gone, so losing the blur
-           underneath does not read as a change, where dropping it at the start
-           of the animation plainly would. It was 0.3, which at 120 Hz left two
-           or three frames of faint card over an unblurred backdrop — visible
-           as a ghost in a frame-by-frame capture. Below 0.15 that is under one
-           frame, and the region no longer moves during the exit, so dropping
-           it late costs nothing. */
-        if (root.leaving && reveal < 0.15) {
+           When to drop it is Style.blurDropAt, because the right answer
+           depends on whether the card leaves the screen or fades where it
+           stands, and that is a theme's decision (motion.slideTravel).
+
+           The default 0.15 is tuned for a card that fades in place. The exit
+           accelerates (InQuint), so by the time reveal is this low the card is
+           nearly gone and the blur going out from under it does not read as a
+           change. It was 0.3, which at 120 Hz left two or three frames of
+           faint card over an unblurred backdrop — visible as a ghost in a
+           frame-by-frame capture.
+
+           But that argument only weighs one side. Dropping the region also
+           changes the *backdrop* in one step, and what hides that step is the
+           card's own fill — card.background, alpha 0.83 in the macOS theme.
+           So the later the drop, the more of the change shows through:
+
+               drop at reveal 1.00 -> card alpha 0.83, 17% of it visible
+               drop at reveal 0.15 -> card alpha 0.12, 88% of it visible
+
+           Tuning for an invisible card therefore maximises the visible
+           backdrop step, which is a flash at the moment of dismissal — plain
+           over a light window, and the reason this is a theme value now.
+
+           A theme whose cards slide off the screen edge should set it to 1.0
+           and give the region back as the exit begins, while the card is still
+           opaque enough to cover the change and is on its way out of sight
+           anyway. That is what macOS does: the banner leaves the screen rather
+           than fading where it stands, so there is never a moment where a
+           stationary rectangle has to stop being blurred under the viewer's
+           eye. */
+        if (root.leaving && reveal < Style.blurDropAt) {
             if (!root.blurDropped) {
                 root.blurDropped = true
                 if (Window.window) {
