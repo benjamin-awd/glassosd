@@ -468,84 +468,62 @@ Item {
             }
         }
 
-        ColumnLayout {
+        /* macOS layout: the app icon is a sibling of the text column rather
+           than a member of the identity row, so it spans every line the card
+           shows instead of sitting on the first one. Everything below the
+           icon is the upstream content column, moved one level into textCol. */
+        RowLayout {
             id: body
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
             anchors.margins: Style.padding
-            spacing: 3
+            spacing: 10
 
-            // ---- identity line ------------------------------------------
-            /* Contents and order come from [Appearance] NotifyHeader. An
-               empty list hides the row: Layouts skip an invisible item, so
-               nothing is left behind where it was. The summary and body are
-               deliberately not configurable here — a notification with neither
-               is not a notification. */
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 7
-                visible: Appearance.notifyHeader.length > 0
+            /* The squircle container is for *symbolic* glyphs, which need
+               something to sit in. An application icon is already a designed
+               shape and gets no container; only our own monochrome glyphs do. */
+            Rectangle {
+                id: iconHolder
+                Layout.alignment: Qt.AlignTop
+                Layout.preferredWidth: Style.notifyIconSize + 8
+                Layout.preferredHeight: Style.notifyIconSize + 8
+                visible: root.entry.iconSource !== ""
+                         && Appearance.notifyHeader.includes("icon")
+                radius: width * Style.chipRadiusRatio
+                color: appIcon.isSymbolic ? Style.chipIdle : "transparent"
 
-                /* The squircle container is for *symbolic* glyphs, which need
-                   something to sit in. An application icon is already a
-                   designed shape — very often a rounded square itself — and
-                   putting one inside our squircle gives a squircle within a
-                   squircle at two different radii, which reads as a mistake.
-                   macOS and Windows both show app icons bare for this reason.
-                   Full-colour artwork with its own silhouette therefore gets
-                   no container; only our own monochrome glyphs do. */
-                Rectangle {
-                    Layout.preferredWidth: Style.notifyIconSize + 8
-                    Layout.preferredHeight: Style.notifyIconSize + 8
-                    visible: root.entry.iconSource !== ""
-                             && Appearance.notifyHeader.includes("icon")
-                    radius: width * Style.chipRadiusRatio
-                    color: appIcon.isSymbolic ? Style.chipIdle : "transparent"
+                Image {
+                    id: appIcon
+                    anchors.centerIn: parent
+                    width: isSymbolic ? Style.notifyIconSize
+                                      : Style.notifyIconSize + 6
+                    height: width
+                    source: root.entry.iconSource
+                    sourceSize: Qt.size(Style.notifyIconSize, Style.notifyIconSize)
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                    mipmap: true
 
-                    Image {
-                        id: appIcon
-                        anchors.centerIn: parent
-                        /* Bare app icons render a touch larger, because they
-                           are no longer inset within a container. */
-                        width: isSymbolic ? Style.notifyIconSize
-                                          : Style.notifyIconSize + 6
-                        height: width
-                        source: root.entry.iconSource
-                        /* Logical size; Qt applies the device pixel ratio
-                           itself. See the note in OsdSurface.qml. */
-                        sourceSize: Qt.size(Style.notifyIconSize, Style.notifyIconSize)
-                        fillMode: Image.PreserveAspectFit
-                        smooth: true
-                        mipmap: true
-
-                        /* Our own glyphs are drawn white-on-nothing and need a
-                           container to read against the card; anything from an
-                           icon theme is artwork and does not. */
-                        readonly property bool isSymbolic:
-                            Icons.isCustom(root.entry.iconSource)
-                            || String(root.entry.iconSource).indexOf("symbolic") !== -1
-                    }
+                    readonly property bool isSymbolic:
+                        Icons.isCustom(root.entry.iconSource)
+                        || String(root.entry.iconSource).indexOf("symbolic") !== -1
                 }
+            }
 
+            ColumnLayout {
+                id: textCol
+                Layout.fillWidth: true
+                spacing: 3
+
+                // ---- identity ------------------------------------
+                /* Off by default in this layout: macOS says who sent it with
+                   the icon and gives the bold line to the summary. Still
+                   honoured when NotifyHeader asks for it. */
                 Text {
                     Layout.fillWidth: true
                     visible: Appearance.notifyHeader.includes("appname")
                     text: root.entry.appName
-                    /* Critical urgency is marked here and nowhere else.
-
-                       Until now nothing distinguished it at all: the card
-                       never expired, which is correct, but looked exactly like
-                       every other card, so the one notification that wanted
-                       attention was the one you could not pick out.
-
-                       The app-name line is the quietest place that still
-                       reads. It is already the label saying what sent this, so
-                       colouring it costs no layout and adds no furniture, and
-                       a screen full of critical notifications does not become
-                       a screen full of red bars. A tinted background or a
-                       stripe was the alternative and both shout, which is
-                       wrong for something that is often merely a low battery. */
                     color: root.entry.urgency === 2 ? Style.critical
                                                     : Style.foregroundMuted
                     font.family: Style.fontFamily
@@ -556,239 +534,252 @@ Item {
                     elide: Text.ElideRight
                 }
 
-                /* Controls are always present rather than hover-revealed:
-                   a button you cannot see is a button you do not know exists.
-                   They sit at low opacity so they stay quiet until wanted,
-                   which keeps the card calm without hiding the affordance. */
-                Text {
-                    visible: Appearance.notifyHeader.includes("time")
-                    text: root.entry.when
-                    color: Style.foregroundDim
-                    font.family: Style.fontFamily
-                    font.pointSize: Style.fontSize - 2
-                }
-
-                /* Put it away and let it come back. Only offered where it can
-                   be honoured: a notification the sender expects to replace or
-                   update — one carrying a stack tag — would come back stale,
-                   and one that never expires is already staying until it is
-                   dealt with. */
-                CardButton {
-                    visible: root.entry.stackTag === ""
-                             && Appearance.notifyHeader.includes("snooze")
-                    icon: "snooze"
-                    onActivated: root.snoozeRequested()
-                }
-
-                CardButton {
-                    visible: Appearance.notifyHeader.includes("settings")
-                    icon: "settings"
-                    onActivated: root.settingsRequested()
-                }
-
-                /* Losing this does not trap a notification: clicking the
-                   card dismisses it, so does middle-click, and so does a
-                   swipe. */
-                CardButton {
-                    visible: Appearance.notifyHeader.includes("close")
-                    icon: "close"
-                    onActivated: root.dismissed()
-                }
-            }
-
-            Text {
-                Layout.fillWidth: true
-                Layout.topMargin: 2
-                visible: text !== ""
-                text: root.entry.summary
-                color: Style.foreground
-                font.family: Style.fontFamily
-                font.pointSize: Style.fontSize
-                font.bold: true
-                wrapMode: Text.WordWrap
-                maximumLineCount: 2
-                elide: Text.ElideRight
-            }
-
-            Text {
-                Layout.fillWidth: true
-                visible: text !== ""
-                text: root.entry.body
-                color: Style.foregroundDim
-                font.family: Style.fontFamily
-                font.pointSize: Style.fontSize - 1
-                wrapMode: Text.WordWrap
-                maximumLineCount: Appearance.bodyLines
-                elide: Text.ElideRight
-                textFormat: Text.StyledText
-            }
-
-            /* A pill, matching the queue-overflow row exactly. "More exists
-               beyond what is shown" was previously two different shapes
-               depending on which mechanism produced it. */
-            Rectangle {
-                Layout.topMargin: 6
-                visible: root.entry.groupCount > 1
-                implicitWidth: moreLine.implicitWidth + 22
-                implicitHeight: moreLine.implicitHeight + 10
-                radius: height / 2
-                color: moreArea.containsMouse ? Style.controlFillHover : Style.controlFill
-                border.color: Style.controlEdge
-                border.width: 1
-                Behavior on color { ColorAnimation { duration: 110 } }
-
-                Text {
-                    id: moreLine
-                    anchors.centerIn: parent
-                    /* "Show", because this one is a button and pressing it
-                       opens them. The queue's pill in NotificationStack.qml
-                       said the same words for something else entirely —
-                       notifications waiting behind the display limit, which
-                       you cannot act on — so the two are worded apart. */
-                    text: "Show " + (root.entry.groupCount - 1) + " more"
-                    color: Style.foreground
-                    font.family: Style.fontFamily
-                    font.pointSize: Style.fontSize - 2
-                }
-
-                MouseArea {
-                    id: moreArea
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    onClicked: root.moreRequested()
-                }
-            }
-
-            /* "value" hint rendered as a bar — what a file transfer or an
-               app-driven volume change actually wants to show. */
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.topMargin: 8
-                Layout.preferredHeight: 5
-                visible: root.entry.progress >= 0
-                radius: height / 2
-                color: Style.trackColor
-
-                Rectangle {
-                    height: parent.height
-                    radius: parent.radius
-                    width: parent.width * Math.max(0, Math.min(1, root.entry.progress / 100))
-                    color: Style.accent
-                    Behavior on width { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
-                }
-            }
-
-            // ---- inline reply (KDE extension, sender-driven) -------------
-            RowLayout {
-                Layout.fillWidth: true
-                Layout.topMargin: 8
-                spacing: 6
-                visible: root.entry.inlineReply === true
-
-                Rectangle {
+                /* First line: the summary, then the time — which the controls
+                   replace while the pointer is on the card, the way a macOS
+                   banner swaps its timestamp for Options on hover. */
+                RowLayout {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 32
-                    radius: 9
-                    color: Qt.rgba(1, 1, 1, 0.08)
-                    border.color: replyInput.activeFocus ? Style.accent : Qt.rgba(1, 1, 1, 0.12)
-                    border.width: 1
+                    spacing: 7
 
                     Text {
-                        anchors.fill: parent
-                        anchors.leftMargin: 10
-                        verticalAlignment: Text.AlignVCenter
-                        visible: replyInput.text === "" && !replyInput.activeFocus
-                        text: root.entry.replyPlaceholder
+                        Layout.fillWidth: true
+                        visible: text !== ""
+                        text: root.entry.summary
+                        /* Critical urgency used to be marked on the app-name
+                           line, which this layout hides by default, so it
+                           falls to the summary — still the quietest place
+                           that reads, and still no tinted bar. */
+                        color: root.entry.urgency === 2
+                               && !Appearance.notifyHeader.includes("appname")
+                               ? Style.critical : Style.foreground
+                        font.family: Style.fontFamily
+                        font.pointSize: Style.fontSize
+                        font.bold: true
+                        wrapMode: Text.WordWrap
+                        maximumLineCount: 2
+                        elide: Text.ElideRight
+                    }
+
+                    Text {
+                        visible: Appearance.notifyHeader.includes("time")
+                                 && !cardHover.containsMouse
+                        text: root.entry.when
                         color: Style.foregroundDim
                         font.family: Style.fontFamily
-                        font.pointSize: Style.fontSize - 1
+                        font.pointSize: Style.fontSize - 2
                     }
 
-                    TextInput {
-                        id: replyInput
-                        anchors.fill: parent
-                        anchors.leftMargin: 10
-                        anchors.rightMargin: 10
-                        verticalAlignment: Text.AlignVCenter
-                        color: Style.foreground
-                        font.family: Style.fontFamily
-                        font.pointSize: Style.fontSize - 1
-                        selectByMouse: true
-                        clip: true
-                        onAccepted: root.replySent(text)
+                    CardButton {
+                        visible: root.entry.stackTag === ""
+                                 && Appearance.notifyHeader.includes("snooze")
+                                 && cardHover.containsMouse
+                        icon: "snooze"
+                        onActivated: root.snoozeRequested()
+                    }
+
+                    CardButton {
+                        visible: Appearance.notifyHeader.includes("settings")
+                                 && cardHover.containsMouse
+                        icon: "settings"
+                        onActivated: root.settingsRequested()
                     }
                 }
 
+                Text {
+                    Layout.fillWidth: true
+                    visible: text !== ""
+                    text: root.entry.body
+                    color: Style.foregroundDim
+                    font.family: Style.fontFamily
+                    font.pointSize: Style.fontSize - 1
+                    wrapMode: Text.WordWrap
+                    maximumLineCount: Appearance.bodyLines
+                    elide: Text.ElideRight
+                    textFormat: Text.StyledText
+                }
+
+                /* A pill, matching the queue-overflow row exactly. "More exists
+                   beyond what is shown" was previously two different shapes
+                   depending on which mechanism produced it. */
                 Rectangle {
-                    Layout.preferredWidth: sendLabel.implicitWidth + 22
-                    Layout.preferredHeight: 32
-                    radius: 9
-                    color: replyInput.text !== ""
-                           ? (sendHover.containsMouse ? Qt.lighter(Style.accent, 1.15) : Style.accent)
-                           : Qt.rgba(1, 1, 1, 0.08)
-                    Behavior on color { ColorAnimation { duration: 100 } }
+                    Layout.topMargin: 6
+                    visible: root.entry.groupCount > 1
+                    implicitWidth: moreLine.implicitWidth + 22
+                    implicitHeight: moreLine.implicitHeight + 10
+                    radius: height / 2
+                    color: moreArea.containsMouse ? Style.controlFillHover : Style.controlFill
+                    border.color: Style.controlEdge
+                    border.width: 1
+                    Behavior on color { ColorAnimation { duration: 110 } }
 
                     Text {
-                        id: sendLabel
+                        id: moreLine
                         anchors.centerIn: parent
-                        text: root.entry.replySubmitText
+                        /* "Show", because this one is a button and pressing it
+                           opens them. The queue's pill in NotificationStack.qml
+                           said the same words for something else entirely —
+                           notifications waiting behind the display limit, which
+                           you cannot act on — so the two are worded apart. */
+                        text: "Show " + (root.entry.groupCount - 1) + " more"
                         color: Style.foreground
                         font.family: Style.fontFamily
-                        font.pointSize: Style.fontSize - 1
+                        font.pointSize: Style.fontSize - 2
                     }
 
                     MouseArea {
-                        id: sendHover
+                        id: moreArea
                         anchors.fill: parent
                         hoverEnabled: true
-                        onClicked: if (replyInput.text !== "") root.replySent(replyInput.text)
+                        onClicked: root.moreRequested()
                     }
                 }
-            }
 
-            // ---- segmented actions --------------------------------------
-            RowLayout {
-                Layout.fillWidth: true
-                Layout.topMargin: 8
-                spacing: 1
-                visible: root.entry.actions.length > 0
+                /* "value" hint rendered as a bar — what a file transfer or an
+                   app-driven volume change actually wants to show. */
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.topMargin: 8
+                    Layout.preferredHeight: 5
+                    visible: root.entry.progress >= 0
+                    radius: height / 2
+                    color: Style.trackColor
 
-                Repeater {
-                    model: root.entry.actions
-                    delegate: Rectangle {
-                        required property var modelData
-                        required property int index
+                    Rectangle {
+                        height: parent.height
+                        radius: parent.radius
+                        width: parent.width * Math.max(0, Math.min(1, root.entry.progress / 100))
+                        color: Style.accent
+                        Behavior on width { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                    }
+                }
+
+                // ---- inline reply (KDE extension, sender-driven) -------------
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.topMargin: 8
+                    spacing: 6
+                    visible: root.entry.inlineReply === true
+
+                    Rectangle {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 30
-                        color: actHover.pressed ? Style.controlFillActive
-                             : actHover.containsMouse ? Style.controlFillHover
-                                                      : Style.controlFill
-                        Behavior on color { ColorAnimation { duration: 100 } }
-
-                        // Square off the inner edges so the row reads as one
-                        // segmented control rather than separate buttons.
-                        topLeftRadius: index === 0 ? 9 : 0
-                        bottomLeftRadius: index === 0 ? 9 : 0
-                        topRightRadius: index === root.entry.actions.length - 1 ? 9 : 0
-                        bottomRightRadius: index === root.entry.actions.length - 1 ? 9 : 0
+                        Layout.preferredHeight: 32
+                        radius: 9
+                        color: Qt.rgba(1, 1, 1, 0.08)
+                        border.color: replyInput.activeFocus ? Style.accent : Qt.rgba(1, 1, 1, 0.12)
+                        border.width: 1
 
                         Text {
+                            anchors.fill: parent
+                            anchors.leftMargin: 10
+                            verticalAlignment: Text.AlignVCenter
+                            visible: replyInput.text === "" && !replyInput.activeFocus
+                            text: root.entry.replyPlaceholder
+                            color: Style.foregroundDim
+                            font.family: Style.fontFamily
+                            font.pointSize: Style.fontSize - 1
+                        }
+
+                        TextInput {
+                            id: replyInput
+                            anchors.fill: parent
+                            anchors.leftMargin: 10
+                            anchors.rightMargin: 10
+                            verticalAlignment: Text.AlignVCenter
+                            color: Style.foreground
+                            font.family: Style.fontFamily
+                            font.pointSize: Style.fontSize - 1
+                            selectByMouse: true
+                            clip: true
+                            onAccepted: root.replySent(text)
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.preferredWidth: sendLabel.implicitWidth + 22
+                        Layout.preferredHeight: 32
+                        radius: 9
+                        color: replyInput.text !== ""
+                               ? (sendHover.containsMouse ? Qt.lighter(Style.accent, 1.15) : Style.accent)
+                               : Qt.rgba(1, 1, 1, 0.08)
+                        Behavior on color { ColorAnimation { duration: 100 } }
+
+                        Text {
+                            id: sendLabel
                             anchors.centerIn: parent
-                            text: modelData.label
+                            text: root.entry.replySubmitText
                             color: Style.foreground
                             font.family: Style.fontFamily
                             font.pointSize: Style.fontSize - 1
                         }
 
                         MouseArea {
-                            id: actHover
+                            id: sendHover
                             anchors.fill: parent
                             hoverEnabled: true
-                            onClicked: root.actionTriggered(modelData.key)
+                            onClicked: if (replyInput.text !== "") root.replySent(replyInput.text)
+                        }
+                    }
+                }
+
+                // ---- segmented actions --------------------------------------
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.topMargin: 8
+                    spacing: 1
+                    visible: root.entry.actions.length > 0
+
+                    Repeater {
+                        model: root.entry.actions
+                        delegate: Rectangle {
+                            required property var modelData
+                            required property int index
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 30
+                            color: actHover.pressed ? Style.controlFillActive
+                                 : actHover.containsMouse ? Style.controlFillHover
+                                                          : Style.controlFill
+                            Behavior on color { ColorAnimation { duration: 100 } }
+
+                            // Square off the inner edges so the row reads as one
+                            // segmented control rather than separate buttons.
+                            topLeftRadius: index === 0 ? 9 : 0
+                            bottomLeftRadius: index === 0 ? 9 : 0
+                            topRightRadius: index === root.entry.actions.length - 1 ? 9 : 0
+                            bottomRightRadius: index === root.entry.actions.length - 1 ? 9 : 0
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: modelData.label
+                                color: Style.foreground
+                                font.family: Style.fontFamily
+                                font.pointSize: Style.fontSize - 1
+                            }
+
+                            MouseArea {
+                                id: actHover
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                onClicked: root.actionTriggered(modelData.key)
+                            }
                         }
                     }
                 }
             }
+        }
+
+        /* macOS puts the dismiss control on the top-left corner, overlapping
+           the card edge, and only once the pointer has arrived. There is room
+           to overlap because the window is shadowPad larger than the card on
+           every side. Hiding it strands nothing: clicking the card, middle-
+           clicking and swiping all still dismiss. */
+        CardButton {
+            icon: "close"
+            visible: Appearance.notifyHeader.includes("close")
+                     && cardHover.containsMouse
+            anchors.horizontalCenter: parent.left
+            anchors.verticalCenter: parent.top
+            z: 3
+            onActivated: root.dismissed()
         }
     }
 }
