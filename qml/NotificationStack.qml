@@ -151,14 +151,28 @@ Window {
         spacing: Style.notifySpacing
 
         /* The cards register their regions in window coordinates, and moving
-           the whole column moves them without changing their own y. */
-        onYChanged: {
+           the whole column moves them without changing their own y — or their
+           own x. GlassPanel.refreshBlur() reads mapToItem(null, 0, 0), which
+           QML does not re-evaluate when an ancestor moves, so whoever moves an
+           item has to re-register it.
+
+           x was a constant (Style.shadowPad) until the slide geometry made it
+           a binding on win.width, so only y needed this. It now changes
+           whenever the surface is re-widened — today that is only before the
+           first card exists, but nothing in the binding guarantees it stays
+           that way, and a card registered at the old x would blur a slab of
+           backdrop beside itself where no card is drawn. The queue pill below
+           has handled both axes since it was written; this is the same
+           contract. */
+        function refreshChildRegions() {
             for (let i = 0; i < list.count; ++i) {
                 const c = list.itemAt(i)
                 if (c) c.refreshRegions()
             }
             if (storm.shown) storm.refreshBlur()
         }
+        onYChanged: refreshChildRegions()
+        onXChanged: refreshChildRegions()
 
         Repeater {
             id: list
