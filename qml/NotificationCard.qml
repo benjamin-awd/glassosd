@@ -619,12 +619,13 @@ Item {
                     Layout.fillWidth: true
                     visible: text !== ""
                     text: root.entry.body
-                    /* macOS sets the body at the title's size and separates
-                       the two by weight alone, so the second line stays as
-                       readable as the first. */
+                    /* A point below the title. macOS sets both at the same
+                       size and separates them by weight, but that wraps a
+                       chat message to three lines where two will do, and a
+                       card that big stops being glanceable. */
                     color: Style.foregroundMuted
                     font.family: Style.fontFamily
-                    font.pointSize: Style.fontSize
+                    font.pointSize: Style.fontSize - 1
                     wrapMode: Text.WordWrap
                     maximumLineCount: Appearance.bodyLines
                     elide: Text.ElideRight
