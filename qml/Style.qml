@@ -51,6 +51,10 @@ QtObject {
 
     // ---- Geometry ------------------------------------------------------
     readonly property int padding: Math.round(tnum("spacing.padding", px(12)))
+    /* The notification card alone, so matching a platform's banner proportions
+       does not also re-pad the OSD and the control centre. Falls back to
+       padding, so it is invisible until a theme asks for it. */
+    readonly property int notifyPadding: Math.round(tnum("spacing.notifyPadding", padding))
     /* Fully-rounded pills curve inward at the ends, so uniform padding leaves
        content crowding the edge even though the numbers match. */
     readonly property int pillPaddingH: Math.round(tnum("spacing.pillPaddingH", px(20)))

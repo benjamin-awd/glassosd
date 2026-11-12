@@ -477,7 +477,7 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
-            anchors.margins: Style.padding
+            anchors.margins: Style.notifyPadding
             spacing: 10
 
             /* The squircle container is for *symbolic* glyphs, which need
@@ -485,7 +485,7 @@ Item {
                shape and gets no container; only our own monochrome glyphs do. */
             Rectangle {
                 id: iconHolder
-                Layout.alignment: Qt.AlignTop
+                Layout.alignment: Qt.AlignVCenter
                 Layout.preferredWidth: Style.notifyIconSize + 8
                 Layout.preferredHeight: Style.notifyIconSize + 8
                 visible: root.entry.iconSource !== ""
@@ -560,28 +560,58 @@ Item {
                         elide: Text.ElideRight
                     }
 
-                    Text {
+                    /* Time and controls share one cell, sized to the wider
+                       of the two, so swapping them on hover moves nothing.
+                       Toggling visibility made the row reflow under the
+                       pointer, which is exactly where it is most visible. */
+                    Item {
+                        id: trailing
+                        Layout.alignment: Qt.AlignVCenter
+                        implicitWidth: Math.max(whenText.implicitWidth,
+                                                controls.implicitWidth)
+                        implicitHeight: Math.max(whenText.implicitHeight,
+                                                 controls.implicitHeight)
                         visible: Appearance.notifyHeader.includes("time")
-                                 && !cardHover.containsMouse
-                        text: root.entry.when
-                        color: Style.foregroundDim
-                        font.family: Style.fontFamily
-                        font.pointSize: Style.fontSize - 2
-                    }
+                                 || snoozeBtn.visible || settingsBtn.visible
 
-                    CardButton {
-                        visible: root.entry.stackTag === ""
-                                 && Appearance.notifyHeader.includes("snooze")
-                                 && cardHover.containsMouse
-                        icon: "snooze"
-                        onActivated: root.snoozeRequested()
-                    }
+                        Text {
+                            id: whenText
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: root.entry.when
+                            color: Style.foregroundDim
+                            font.family: Style.fontFamily
+                            font.pointSize: Style.fontSize - 2
+                            opacity: Appearance.notifyHeader.includes("time")
+                                     && !cardHover.containsMouse ? 1 : 0
+                            Behavior on opacity { NumberAnimation { duration: 90 } }
+                        }
 
-                    CardButton {
-                        visible: Appearance.notifyHeader.includes("settings")
-                                 && cardHover.containsMouse
-                        icon: "settings"
-                        onActivated: root.settingsRequested()
+                        RowLayout {
+                            id: controls
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 7
+                            opacity: cardHover.containsMouse ? 1 : 0
+                            /* Not clickable while faded out. */
+                            enabled: opacity > 0
+                            Behavior on opacity { NumberAnimation { duration: 90 } }
+
+                            CardButton {
+                                id: snoozeBtn
+                                visible: root.entry.stackTag === ""
+                                         && Appearance.notifyHeader.includes("snooze")
+                                icon: "snooze"
+                                onActivated: root.snoozeRequested()
+                            }
+
+                            CardButton {
+                                id: settingsBtn
+                                visible: Appearance.notifyHeader.includes("settings")
+                                icon: "settings"
+                                onActivated: root.settingsRequested()
+                            }
+                        }
                     }
                 }
 
@@ -589,9 +619,12 @@ Item {
                     Layout.fillWidth: true
                     visible: text !== ""
                     text: root.entry.body
-                    color: Style.foregroundDim
+                    /* macOS sets the body at the title's size and separates
+                       the two by weight alone, so the second line stays as
+                       readable as the first. */
+                    color: Style.foregroundMuted
                     font.family: Style.fontFamily
-                    font.pointSize: Style.fontSize - 1
+                    font.pointSize: Style.fontSize
                     wrapMode: Text.WordWrap
                     maximumLineCount: Appearance.bodyLines
                     elide: Text.ElideRight
