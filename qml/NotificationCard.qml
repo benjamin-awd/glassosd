@@ -540,12 +540,15 @@ Item {
                     Layout.fillWidth: true
                     visible: Appearance.notifyHeader.includes("appname")
                     text: root.entry.appName
+                    /* macOS runs three lines — app, then sender or subject,
+                       then the message — and makes the first one bold in
+                       ordinary case. It was uppercase and letter-spaced,
+                       which reads as a label above a card rather than as the
+                       card's own first line. */
                     color: root.entry.urgency === 2 ? Style.critical
-                                                    : Style.foregroundMuted
+                                                    : Style.foreground
                     font.family: Style.fontFamily
-                    font.pointSize: Style.fontSize - 1
-                    font.capitalization: Font.AllUppercase
-                    font.letterSpacing: 0.9
+                    font.pointSize: Style.fontSize
                     font.bold: true
                     elide: Text.ElideRight
                 }
@@ -561,16 +564,18 @@ Item {
                         Layout.fillWidth: true
                         visible: text !== ""
                         text: root.entry.summary
-                        /* Critical urgency used to be marked on the app-name
-                           line, which this layout hides by default, so it
-                           falls to the summary — still the quietest place
-                           that reads, and still no tinted bar. */
+                        /* Critical urgency is marked on whichever line comes
+                           first, so it is never on a line that is hidden. */
                         color: root.entry.urgency === 2
                                && !Appearance.notifyHeader.includes("appname")
                                ? Style.critical : Style.foreground
                         font.family: Style.fontFamily
                         font.pointSize: Style.fontSize
-                        font.bold: true
+                        /* Bold belongs to the first line. With the app name
+                           above it this one is the middle tier and sets in
+                           regular, the way a mail subject does under its
+                           sender. */
+                        font.bold: !Appearance.notifyHeader.includes("appname")
                         wrapMode: Text.WordWrap
                         maximumLineCount: 2
                         elide: Text.ElideRight
