@@ -453,10 +453,26 @@ Item {
             id: cardHover
             anchors.fill: parent
             hoverEnabled: true
-            acceptedButtons: Qt.LeftButton | Qt.MiddleButton
-            /* Pause the dwell timer while the pointer is over the card. */
-            onContainsMouseChanged: root.hoverChanged(containsMouse)
+            acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
+            /* Pause the dwell timer while the pointer is over the card, and
+               while the menu is open: reaching a row can take the pointer
+               off the card, and a card that expired mid-menu would take the
+               menu with it. */
+            onContainsMouseChanged: root.hoverChanged(containsMouse || cardMenu.open)
             onClicked: (mouse) => {
+                /* Right-click opens the card's own menu. Snooze and settings
+                   used to sit on the card permanently, which is a lot of
+                   furniture for two things wanted rarely. */
+                if (mouse.button === Qt.RightButton) {
+                    cardMenu.openAt(mouse.x, mouse.y)
+                    return
+                }
+                /* A click anywhere else puts the menu away rather than
+                   acting, the way dismissing a menu normally works. */
+                if (cardMenu.open) {
+                    cardMenu.close()
+                    return
+                }
                 /* Clicking the body means the sender's "default" action when
                    it published one — that is what makes a chat notification
                    open the conversation. Middle-click always just dismisses,
@@ -560,58 +576,17 @@ Item {
                         elide: Text.ElideRight
                     }
 
-                    /* Time and controls share one cell, sized to the wider
-                       of the two, so swapping them on hover moves nothing.
-                       Toggling visibility made the row reflow under the
-                       pointer, which is exactly where it is most visible. */
-                    Item {
-                        id: trailing
+                    /* Snooze and settings live in the card's menu now, so
+                       nothing swaps in this cell and the time simply stays
+                       put. What this replaced reflowed the row under the
+                       pointer on hover. */
+                    Text {
                         Layout.alignment: Qt.AlignVCenter
-                        implicitWidth: Math.max(whenText.implicitWidth,
-                                                controls.implicitWidth)
-                        implicitHeight: Math.max(whenText.implicitHeight,
-                                                 controls.implicitHeight)
                         visible: Appearance.notifyHeader.includes("time")
-                                 || snoozeBtn.visible || settingsBtn.visible
-
-                        Text {
-                            id: whenText
-                            anchors.right: parent.right
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: root.entry.when
-                            color: Style.foregroundDim
-                            font.family: Style.fontFamily
-                            font.pointSize: Style.fontSize - 2
-                            opacity: Appearance.notifyHeader.includes("time")
-                                     && !cardHover.containsMouse ? 1 : 0
-                            Behavior on opacity { NumberAnimation { duration: 90 } }
-                        }
-
-                        RowLayout {
-                            id: controls
-                            anchors.right: parent.right
-                            anchors.verticalCenter: parent.verticalCenter
-                            spacing: 7
-                            opacity: cardHover.containsMouse ? 1 : 0
-                            /* Not clickable while faded out. */
-                            enabled: opacity > 0
-                            Behavior on opacity { NumberAnimation { duration: 90 } }
-
-                            CardButton {
-                                id: snoozeBtn
-                                visible: root.entry.stackTag === ""
-                                         && Appearance.notifyHeader.includes("snooze")
-                                icon: "snooze"
-                                onActivated: root.snoozeRequested()
-                            }
-
-                            CardButton {
-                                id: settingsBtn
-                                visible: Appearance.notifyHeader.includes("settings")
-                                icon: "settings"
-                                onActivated: root.settingsRequested()
-                            }
-                        }
+                        text: root.entry.when
+                        color: Style.foregroundDim
+                        font.family: Style.fontFamily
+                        font.pointSize: Style.fontSize - 2
                     }
                 }
 
@@ -794,6 +769,97 @@ Item {
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 onClicked: root.actionTriggered(modelData.key)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        /* Drawn inside the card rather than as a Qt popup. A popup is its
+           own window, and this is a layer-shell surface with room for the
+           card and its shadow and nothing else, so a real menu would be
+           placed by the compositor somewhere we do not control. Two rows fit
+           within the card comfortably. */
+        Item {
+            id: cardMenu
+            anchors.fill: parent
+            z: 5
+            visible: open
+            property bool open: false
+            property real atX: 0
+            property real atY: 0
+
+            function openAt(x, y) {
+                atX = x
+                atY = y
+                open = true
+                root.hoverChanged(true)
+            }
+            function close() {
+                open = false
+                root.hoverChanged(cardHover.containsMouse)
+            }
+
+            /* Put away if the card starts leaving under it. */
+            Connections {
+                target: root
+                function onLeavingChanged() { if (root.leaving) cardMenu.open = false }
+            }
+
+            Rectangle {
+                id: menuSheet
+                width: 184
+                height: menuCol.implicitHeight + 10
+                radius: 12
+                /* Opaque: a translucent menu over a translucent card reads as
+                   neither, and the card beneath is busy with text. */
+                color: Style.opaque(Style.cardBackground)
+                border.color: Style.controlEdge
+                border.width: 1
+                /* Clamped, so a right-click near an edge does not hang the
+                   menu outside the card and into the shadow padding. */
+                x: Math.max(6, Math.min(cardMenu.atX, cardMenu.width - width - 6))
+                y: Math.max(6, Math.min(cardMenu.atY, cardMenu.height - height - 6))
+
+                Column {
+                    id: menuCol
+                    width: parent.width
+                    y: 5
+
+                    Repeater {
+                        model: [
+                            { label: "Snooze", key: "snooze", on: root.entry.stackTag === "" },
+                            { label: "Notification settings", key: "settings", on: true }
+                        ]
+                        delegate: Rectangle {
+                            required property var modelData
+                            visible: modelData.on
+                            width: menuCol.width
+                            height: 30
+                            color: rowHover.containsMouse ? Style.controlFillHover
+                                                          : "transparent"
+
+                            Text {
+                                x: 12
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: modelData.label
+                                color: Style.foreground
+                                font.family: Style.fontFamily
+                                font.pointSize: Style.fontSize - 1
+                            }
+
+                            MouseArea {
+                                id: rowHover
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                onClicked: {
+                                    cardMenu.close()
+                                    if (modelData.key === "snooze")
+                                        root.snoozeRequested()
+                                    else
+                                        root.settingsRequested()
+                                }
                             }
                         }
                     }
