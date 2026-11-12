@@ -495,16 +495,19 @@ Item {
                 }
             }
 
-            /* No ScrollEnd came: a mouse wheel, or a trackpad driver that
-               does not phase its events. */
-            Timer {
-                id: idle
-                interval: 120
-                onTriggered: if (flick.gesturing) {
-                    flick.gesturing = false
-                    root.releaseVelocity = 0
-                    root.endSwipe()
-                }
+        }
+
+        /* Sibling of the handler, not a child of it: a pointer handler is not
+           an Item and has no default property to put one in. Ends a gesture
+           that never sent ScrollEnd — a mouse wheel, or a trackpad driver
+           that does not phase its events. */
+        Timer {
+            id: idle
+            interval: 120
+            onTriggered: if (flick.gesturing) {
+                flick.gesturing = false
+                root.releaseVelocity = 0
+                root.endSwipe()
             }
         }
 
