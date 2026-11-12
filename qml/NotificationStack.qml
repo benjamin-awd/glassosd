@@ -23,7 +23,13 @@ Window {
     flags: Qt.FramelessWindowHint
     color: "transparent"
 
-    width: Style.notifyWidth + Style.shadowPad * 2
+    /* With slideTravel set, the surface is widened to reach the anchored
+       screen edge and the margin is folded into the layout instead of the
+       layer-shell margin. A card leaving then gets clipped by the screen
+       edge, not by its own surface a margin's width short of it. */
+    readonly property bool slideRight: Style.slideTravel > 0 && (Appearance.notifyAnchors & 8)
+    readonly property int edgeInset: slideRight ? Appearance.notifyMarginX : 0
+    width: Style.notifyWidth + Style.shadowPad * 2 + edgeInset
 
     /* Grows while on screen, never shrinks; back to fitting once hidden.
 
@@ -71,7 +77,7 @@ Window {
         const a = Appearance.notifyAnchors
         Surface.initLayerShell(win, "glassosd-notifications", a,
                                (a & 1) ? Appearance.notifyMarginY : 0,
-                               (a & 8) ? Appearance.notifyMarginX : 0,
+                               (a & 8) ? (win.slideRight ? 0 : Appearance.notifyMarginX) : 0,
                                (a & 2) ? Appearance.notifyMarginY : 0,
                                (a & 4) ? Appearance.notifyMarginX : 0,
                                false, 0, Appearance.notifyLayer)
@@ -137,8 +143,9 @@ Window {
 
     ColumnLayout {
         id: column
-        x: Style.shadowPad
-        width: win.width - Style.shadowPad * 2
+        x: win.slideRight ? win.width - win.edgeInset - Style.notifyWidth
+                          : Style.shadowPad
+        width: Style.notifyWidth
         height: implicitHeight
         y: win.bottomAnchored ? win.height - Style.shadowPad - implicitHeight : Style.shadowPad
         spacing: Style.notifySpacing

@@ -338,4 +338,10 @@ QtObject {
     readonly property int swipeTravel: Math.round(tnum("motion.swipeTravel", shadowPad))
     readonly property real swipeCommit: tnum("motion.swipeCommit", 0.28)
     readonly property int swipeSpring: Math.round(tnum("motion.swipeSpring", 200))
+    /* Velocity that commits a flick on its own, px/s. */
+    readonly property int swipeFlick: Math.round(tnum("motion.swipeFlick", 600))
+    /* How far a card travels on arrival and on dismissal. 0 keeps the card
+       where it is and lets the fade do the work, which is what a surface that
+       stops short of the screen edge has to do. */
+    readonly property int slideTravel: Math.round(tnum("motion.slideTravel", 0))
 }

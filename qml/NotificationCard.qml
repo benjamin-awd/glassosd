@@ -64,14 +64,26 @@ Item {
        that this card is not going to fly anywhere. The fade does the rest. */
     property real swipeRaw: 0.0
     property bool swipingOut: false
+    /* Set by whichever gesture is ending, immediately before endSwipe(). */
+    property real releaseVelocity: 0.0
+    /* With slideTravel set the surface reaches the screen edge, so a
+       rightward swipe follows the finger exactly and is clipped by the edge
+       the way the macOS banner is. Leftwards still saturates: the gesture
+       means nothing in that direction, and the resistance says so. */
     readonly property real swipeX:
-        Style.swipeTravel * Math.tanh(swipeRaw / Math.max(1, Style.swipeTravel))
+        (Style.slideTravel > 0 && swipeRaw > 0)
+            ? swipeRaw
+            : Style.swipeTravel * Math.tanh(swipeRaw / Math.max(1, Style.swipeTravel))
     /* How close the gesture is to committing, 0..1. Drives the fade, so the
        card is visibly half gone by the time letting go would dismiss it. */
     readonly property real swipeProgress:
         Math.min(1.0, Math.abs(swipeRaw) / Math.max(1, root.width * Style.swipeCommit))
 
-    opacity: (stacked ? Style.cardBackground.a : 1.0) * reveal * (1.0 - 0.8 * swipeProgress)
+    /* The swipe fade existed because the card could not leave: it saturated
+       40px out and had to disappear somehow. Once it can travel off the edge
+       there is nothing to cover up, and macOS does not fade either. */
+    opacity: (stacked ? Style.cardBackground.a : 1.0) * reveal
+             * (Style.slideTravel > 0 ? 1.0 : (1.0 - 0.8 * swipeProgress))
     layer.enabled: stacked
 
     /* Quint rather than Cubic: Material's "emphasized" curves are far steeper
@@ -120,8 +132,10 @@ Item {
        of y, so the layout does not reflow every frame and the cards below stay
        put while this one arrives. */
     transform: Translate {
-        x: root.swipeX
-        y: (1.0 - root.reveal) * Style.animRise
+        /* Arrives from the right, as the macOS banner does, and rises only
+           when it cannot slide. The two together read as a diagonal. */
+        x: root.swipeX + (1.0 - root.reveal) * Style.slideTravel
+        y: Style.slideTravel > 0 ? 0 : (1.0 - root.reveal) * Style.animRise
     }
 
     /* Set once the blur region has been dropped, so it is not dropped again on
@@ -167,6 +181,12 @@ Item {
            made the blur unstable on the way out (below), and the same
            applies on the way in. */
         if (!root.leaving && reveal > 0 && reveal < 1) {
+            /* A sliding card crosses the whole width of the surface, so a
+               region sent at the start would sit blurred where the card is
+               not, for the length of the flight. It gets its blur on
+               landing instead. */
+            if (Style.slideTravel > 0)
+                return
             if (root.entrySent)
                 return
             root.entrySent = true
@@ -251,8 +271,17 @@ Item {
        does not have to be a long one — but distance alone is enough, which
        keeps the gesture usable if the velocity reads as zero. */
     function endSwipe() {
-        const committed = Math.abs(swipeRaw) > root.width * Style.swipeCommit
-                       || Math.abs(swipe.centroid.velocity.x) > 600
+        /* Rightwards only, as macOS has it. A left swipe springs back however
+           far it went: the gesture there means nothing, and dismissing on it
+           made a card vanish when the pointer was only on its way somewhere
+           else. */
+        /* releaseVelocity rather than reading the handler: by the time this
+           runs the drag is over, and a wheel gesture never touched the
+           handler at all, so its centroid still holds whatever the last drag
+           left there — which committed dismissals nobody asked for. */
+        const committed = swipeRaw > 0
+                       && (swipeRaw > root.width * Style.swipeCommit
+                           || releaseVelocity > Style.swipeFlick)
         if (!committed) {
             swipeRaw = 0
             root.hoverChanged(cardHover.containsMouse)
@@ -262,7 +291,10 @@ Item {
            travel: the model keeps the row for Style.animOut either way, so
            waiting for the slide to finish first would only double the wait. */
         swipingOut = true
-        swipeRaw = swipeRaw > 0 ? root.width : -root.width
+        /* Far enough to clear the screen edge, not merely the card's own
+           width: the surface now reaches the edge, so the card is clipped by
+           it rather than stopping short. */
+        swipeRaw = root.width + Style.shadowPad * 2
         root.dismissed()
     }
     signal dismissed()
@@ -415,6 +447,49 @@ Item {
            once the drag threshold is passed. That is what stops a swipe from
            also counting as a click and running the notification's default
            action on the way past. */
+        /* macOS dismisses on a two-finger trackpad swipe with no click at
+           all, which arrives here as horizontal wheel events. A trackpad
+           brackets them with ScrollBegin/ScrollEnd; a plain mouse wheel does
+           not, so that case is ended by a short timer instead. */
+        WheelHandler {
+            id: flick
+            orientation: Qt.Horizontal
+            acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+            enabled: !replyInput.activeFocus && !swipe.active
+            property bool gesturing: false
+
+            onWheel: (event) => {
+                const dx = event.pixelDelta.x !== 0 ? event.pixelDelta.x
+                                                    : event.angleDelta.x / 8
+                if (dx === 0 && event.phase !== 7 /* ScrollEnd */)
+                    return
+                if (!gesturing) {
+                    gesturing = true
+                    root.hoverChanged(true)
+                }
+                root.swipeRaw += dx
+                if (event.phase === 7 /* ScrollEnd */) {
+                    gesturing = false
+                    root.releaseVelocity = 0
+                    root.endSwipe()
+                } else {
+                    idle.restart()
+                }
+            }
+
+            /* No ScrollEnd came: a mouse wheel, or a trackpad driver that
+               does not phase its events. */
+            Timer {
+                id: idle
+                interval: 120
+                onTriggered: if (flick.gesturing) {
+                    flick.gesturing = false
+                    root.releaseVelocity = 0
+                    root.endSwipe()
+                }
+            }
+        }
+
         DragHandler {
             id: swipe
             /* Nothing for the handler to move. The card follows through
@@ -445,6 +520,7 @@ Item {
                     root.hoverChanged(true)
                     return
                 }
+                root.releaseVelocity = swipe.centroid.velocity.x
                 root.endSwipe()
             }
         }
