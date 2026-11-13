@@ -111,6 +111,17 @@ Rectangle {
        the blur region (see roundedRegion()) sits under the same density as
        the rest of the panel instead of under a nearly clear ring. */
     Rectangle {
+        visible: root.glass && Style.glassOutline.a > 0
+        anchors.fill: parent
+        anchors.margins: -1
+        radius: root.radius + 1
+        color: "transparent"
+        border.color: Style.glassOutline
+        border.width: 1
+        antialiasing: true
+    }
+
+    Rectangle {
         anchors.fill: parent
         radius: root.radius
         bottomLeftRadius: root.bottomLeftRadius

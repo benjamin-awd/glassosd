@@ -86,6 +86,26 @@ QtObject {
        flat glyphs but turned busy ones (an arrow inside a circle, say) into
        mush. Rendered at 3x into the texture so they stay crisp at 1.75 scale. */
     readonly property int notifyIconSize: Math.round(tnum("size.notifyIcon", px(30)))
+    /* The rest of the notification card's geometry, each defaulting to what
+       the card used before it was a token. A theme matching a reference
+       layout (macos.json follows Apple's own UI kit) sets them explicitly.
+
+       Apple's padding is not even: 13 top, 10 left, 14 right, with the app
+       icon in a 40pt box whose artwork is ~32pt. Linux app icons fill their
+       canvas where Apple's carry a margin inside it, so the drawn size is a
+       separate token from the box. */
+    readonly property int notifyPadTop: Math.round(tnum("spacing.notifyPadTop", notifyPadding))
+    readonly property int notifyPadRight: Math.round(tnum("spacing.notifyPadRight", notifyPadding))
+    readonly property int notifyIconBox: Math.round(tnum("size.notifyIconBox", notifyIconSize + 8))
+    readonly property int notifyAppIcon: Math.round(tnum("size.notifyAppIcon", notifyIconSize + 6))
+    readonly property int notifyIconGap: Math.round(tnum("spacing.notifyIconGap", 10))
+    /* Pixel sizes for the card's text, 0 = keep the point-size scheme
+       (fontSize for the title, one below for the body, two below for the
+       time). Apple sets title and body both at 13px on a 16px line and
+       separates them by weight alone. */
+    readonly property int notifyTextPx: Math.round(tnum("font.notifyPx", 0))
+    readonly property int notifyTimePx: Math.round(tnum("font.notifyTimePx", 0))
+    readonly property int notifyLinePx: Math.round(tnum("font.notifyLinePx", 0))
 
     /* Peeking card edges for a grouped stack. */
     /* Matched to the card's corner radius, deliberately.
@@ -264,6 +284,15 @@ QtObject {
     /* 0.55 measured at 3.94 against the light card — under the 4.5 AA body
        threshold. 0.68 clears it while still reading as secondary text. */
     readonly property color foregroundDim: tcolor("text.secondary", dark ? Qt.rgba(0xf4/255,0xf6/255,0xf8/255,0.60) : Qt.rgba(0x16/255,0x18/255,0x1c/255,0.68))
+
+    /* Card body and timestamp colours. Apple draws the body in the same label
+       colour as the title; the default keeps glassosd's quieter body. */
+    readonly property color notifyBody: tcolor("notify.body", foregroundMuted)
+    readonly property color notifyTime: tcolor("notify.time", foregroundDim)
+    /* A hairline just outside a glass panel, standing in for the tight
+       contact shadow (Apple: 0 0 3px at 0.55) that a single MultiEffect
+       shadow cannot draw alongside the wide one. Transparent by default. */
+    readonly property color glassOutline: tcolor("glass.outline", "transparent")
     readonly property color accent: tcolor("accent", Appearance.accent)
     readonly property color critical: tcolor("urgency.critical", "#da4453")
 
@@ -321,6 +350,23 @@ QtObject {
        card, so anything outside it is clipped by the surface itself — so this
        is a short rise into place rather than a journey. */
     readonly property int animRise: Math.round(tnum("motion.rise", 14))
+
+    /* Optional cubic-bezier curves for arrival and departure, as
+       "x1,y1,x2,y2" — the CSS/Core Animation form. Empty keeps the stock
+       OutQuint/InQuint pair. A theme that slides cards on from the screen
+       edge wants a long, soft deceleration (Apple's banner settles over about
+       half a second); a Quint curve over that distance covers most of the
+       travel in its first two frames and reads as a jump, not a glide. */
+    function parseCurve(str) {
+        if (!str)
+            return []
+        const v = String(str).split(",").map(Number)
+        if (v.length !== 4 || !v.every(isFinite))
+            return []
+        return [v[0], v[1], v[2], v[3], 1, 1]
+    }
+    readonly property var curveIn: parseCurve(tstr("motion.curveIn", ""))
+    readonly property var curveOut: parseCurve(tstr("motion.curveOut", ""))
 
     /* Swipe-to-dismiss.
 

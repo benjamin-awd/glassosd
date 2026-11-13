@@ -55,6 +55,8 @@ Window {
        fading in at once spent ~170 ms see-through over a sharp backdrop
        (frame-by-frame capture). Cards wait for this before revealing. */
     property bool exposed: false
+    /* Bumped whenever a card's slot moves, so the cards below re-read it. */
+    property int collapseRev: 0
     onVisibleChanged: {
         exposed = false
         heldHeight = visible ? neededHeight : 1
@@ -191,6 +193,25 @@ Window {
 
                 Layout.fillWidth: true
                 Layout.preferredHeight: implicitHeight
+                /* Close the gap a leaving card above us leaves while it
+                   leaves, not after (see NotificationCard.slot). A transform,
+                   not a layout margin: the layout clamps a negative margin
+                   and squashes the leaving card instead. When the row is
+                   finally removed the layout moves this card up by exactly
+                   what lift had already applied, in the same pass, so the
+                   hand-over is seamless. */
+                lift: {
+                    win.collapseRev
+                    list.count
+                    let s = 0
+                    for (let j = 0; j < index; ++j) {
+                        const c = list.itemAt(j)
+                        if (c && c.slot < 1.0)
+                            s += (1.0 - c.slot) * (c.height + column.spacing)
+                    }
+                    return s
+                }
+                onSlotChanged: win.collapseRev++
 
                 entry: model
                 leaving: model.closing === true

@@ -82,7 +82,13 @@ Item {
     /* The swipe fade existed because the card could not leave: it saturated
        40px out and had to disappear somehow. Once it can travel off the edge
        there is nothing to cover up, and macOS does not fade either. */
-    opacity: (stacked ? Style.cardBackground.a : 1.0) * reveal
+    /* A sliding card is opaque for nearly all of its travel — macOS does not
+       dissolve a banner, it moves it — and only fades in the last stretch
+       nearest the edge, which softens the clip against the screen edge. A
+       card that stays where it is has nothing but the fade, so it keeps the
+       full ramp. */
+    opacity: (stacked ? Style.cardBackground.a : 1.0)
+             * (Style.slideTravel > 0 ? Math.min(1.0, reveal * 4.0) : reveal)
              * (Style.slideTravel > 0 ? 1.0 : (1.0 - 0.8 * swipeProgress))
     layer.enabled: stacked
 
@@ -93,7 +99,8 @@ Item {
         NumberAnimation {
             id: revealAnim
             duration: Style.animIn
-            easing.type: Easing.OutQuint
+            easing.type: Style.curveIn.length ? Easing.BezierSpline : Easing.OutQuint
+            easing.bezierCurve: Style.curveIn
         }
     }
     /* Revealed once the window has put a frame on screen (see
@@ -124,8 +131,33 @@ Item {
            as a card closing from full opacity should, left it hanging at the
            edge for 0.3 s in a frame-by-frame capture. It finishes from where
            the swipe left it instead. */
-        revealAnim.easing.type = swipingOut ? Easing.OutCubic : Easing.InQuint
+        if (swipingOut) {
+            revealAnim.easing.type = Easing.OutCubic
+        } else if (Style.curveOut.length) {
+            revealAnim.easing.bezierCurve = Style.curveOut
+            revealAnim.easing.type = Easing.BezierSpline
+        } else {
+            revealAnim.easing.type = Easing.InQuint
+        }
         reveal = 0.0
+        slot = 0.0
+    }
+
+    /* The card's share of the column, 1 while it is up and 0 once it has
+       gone. Cards below a leaving one used to hold still until its row was
+       removed and then jump up a card's height in one frame; collapsing the
+       slot alongside the exit lets them glide up into the gap while it
+       leaves, which is how a macOS banner stack closes ranks. The stack turns
+       it into a `lift` on every card below; this card's own layout is never
+       touched. */
+    property real slot: 1.0
+    /* How far the cards above this one have collapsed, set by the stack. */
+    property real lift: 0.0
+    Behavior on slot {
+        NumberAnimation {
+            duration: Style.animOut
+            easing.type: Easing.InOutCubic
+        }
     }
 
     /* Rises into place, and sinks as it goes. A transform rather than a change
@@ -135,7 +167,7 @@ Item {
         /* Arrives from the right, as the macOS banner does, and rises only
            when it cannot slide. The two together read as a diagonal. */
         x: root.swipeX + (1.0 - root.reveal) * Style.slideTravel
-        y: Style.slideTravel > 0 ? 0 : (1.0 - root.reveal) * Style.animRise
+        y: (Style.slideTravel > 0 ? 0 : (1.0 - root.reveal) * Style.animRise) - root.lift
     }
 
     /* A card that is destroyed without finishing its exit — Clear all, an
@@ -202,7 +234,11 @@ Item {
            than fading where it stands, so there is never a moment where a
            stationary rectangle has to stop being blurred under the viewer's
            eye. */
-        if (root.leaving && reveal < Style.blurDropAt) {
+        /* A card that slides off the edge keeps its region all the way out:
+           Surface re-reads the card's live geometry every frame, so the blur
+           travels with it and is clipped away at the surface edge, and there
+           is never a stationary blurred patch to give back early. */
+        if (root.leaving && Style.slideTravel <= 0 && reveal < Style.blurDropAt) {
             if (!root.blurDropped) {
                 root.blurDropped = true
                 if (Window.window) {
@@ -648,7 +684,9 @@ Item {
             anchors.right: parent.right
             anchors.top: parent.top
             anchors.margins: Style.notifyPadding
-            spacing: 10
+            anchors.topMargin: Style.notifyPadTop
+            anchors.rightMargin: Style.notifyPadRight
+            spacing: Style.notifyIconGap
 
             /* The squircle container is for *symbolic* glyphs, which need
                something to sit in. An application icon is already a designed
@@ -656,8 +694,8 @@ Item {
             Rectangle {
                 id: iconHolder
                 Layout.alignment: Qt.AlignVCenter
-                Layout.preferredWidth: Style.notifyIconSize + 8
-                Layout.preferredHeight: Style.notifyIconSize + 8
+                Layout.preferredWidth: Style.notifyIconBox
+                Layout.preferredHeight: Style.notifyIconBox
                 visible: root.entry.iconSource !== ""
                          && Appearance.notifyHeader.includes("icon")
                 radius: width * Style.chipRadiusRatio
@@ -667,10 +705,13 @@ Item {
                     id: appIcon
                     anchors.centerIn: parent
                     width: isSymbolic ? Style.notifyIconSize
-                                      : Style.notifyIconSize + 6
+                                      : Style.notifyAppIcon
                     height: width
                     source: root.entry.iconSource
-                    sourceSize: Qt.size(Style.notifyIconSize, Style.notifyIconSize)
+                    /* Rasterised at the drawn size, not the box token, so an
+                       SVG theme icon is never rendered small and scaled up. */
+                    sourceSize: Qt.size(width * Screen.devicePixelRatio,
+                                        width * Screen.devicePixelRatio)
                     fillMode: Image.PreserveAspectFit
                     smooth: true
                     mipmap: true
@@ -684,7 +725,8 @@ Item {
             ColumnLayout {
                 id: textCol
                 Layout.fillWidth: true
-                spacing: 3
+                /* Apple's body line starts 1.5pt below a 16pt title line. */
+                spacing: Style.notifyLinePx > 0 ? 2 : 3
 
                 // ---- identity ------------------------------------
                 /* Off by default in this layout: macOS says who sent it with
@@ -724,7 +766,10 @@ Item {
                                && !Appearance.notifyHeader.includes("appname")
                                ? Style.critical : Style.foreground
                         font.family: Style.fontFamily
-                        font.pointSize: Style.fontSize
+                        font.pointSize: Style.notifyTextPx > 0 ? Style.notifyTextPx * 0.75
+                                                               : Style.fontSize
+                        lineHeightMode: Style.notifyLinePx > 0 ? Text.FixedHeight : Text.ProportionalHeight
+                        lineHeight: Style.notifyLinePx > 0 ? Style.notifyLinePx : 1.0
                         /* Bold belongs to the first line. With the app name
                            above it this one is the middle tier and sets in
                            regular, the way a mail subject does under its
@@ -743,9 +788,10 @@ Item {
                         Layout.alignment: Qt.AlignVCenter
                         visible: Appearance.notifyHeader.includes("time")
                         text: root.entry.when
-                        color: Style.foregroundDim
+                        color: Style.notifyTime
                         font.family: Style.fontFamily
-                        font.pointSize: Style.fontSize - 2
+                        font.pointSize: Style.notifyTimePx > 0 ? Style.notifyTimePx * 0.75
+                                                               : Style.fontSize - 2
                     }
                 }
 
@@ -757,9 +803,12 @@ Item {
                        size and separates them by weight, but that wraps a
                        chat message to three lines where two will do, and a
                        card that big stops being glanceable. */
-                    color: Style.foregroundMuted
+                    color: Style.notifyBody
                     font.family: Style.fontFamily
-                    font.pointSize: Style.fontSize - 1
+                    font.pointSize: Style.notifyTextPx > 0 ? Style.notifyTextPx * 0.75
+                                                           : Style.fontSize - 1
+                    lineHeightMode: Style.notifyLinePx > 0 ? Text.FixedHeight : Text.ProportionalHeight
+                    lineHeight: Style.notifyLinePx > 0 ? Style.notifyLinePx : 1.0
                     wrapMode: Text.WordWrap
                     maximumLineCount: Appearance.bodyLines
                     elide: Text.ElideRight
