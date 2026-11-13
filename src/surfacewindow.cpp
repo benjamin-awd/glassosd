@@ -8,6 +8,7 @@
 #include <cmath>
 
 #include <QGuiApplication>
+#include <QQuickItem>
 #include <QQuickWindow>
 #include <QScreen>
 #include <QTimer>
@@ -231,6 +232,22 @@ void Surface::setPanelRegion(QQuickWindow *window, QObject *panel, const QRectF 
             }
             scheduleRecompute(window);
         });
+        /* Frame-synchronous region updates. afterAnimating is emitted on the
+           GUI thread once this frame's animations have advanced and its
+           bindings have settled, and before the render thread is asked to
+           sync — so a region sent from here is marshalled ahead of the
+           commit that carries the frame it describes, and the compositor
+           applies both together. recompute() re-reads every panel's live
+           geometry, so a card sliding, displacing or being swiped has its
+           blur follow it on the very frame it moves, instead of one frame
+           behind (a QTimer pass races the render thread's commit) or not at
+           all until it lands. Unchanged regions are not resent. */
+        connect(window, &QQuickWindow::afterAnimating, this, [this, window]() {
+            if (m_regions.contains(window)) {
+                m_dirty.remove(window);
+                recompute(window);
+            }
+        }, Qt::DirectConnection);
     }
 
     auto &perWindow = m_regions[window];
@@ -251,6 +268,15 @@ void Surface::scheduleRecompute(QQuickWindow *window)
         return;
     }
     m_dirty.insert(window);
+    /* On screen, the work waits for the next frame's afterAnimating, which
+       sees the layout after its polish pass. A timer pass runs between
+       frames instead, and reads geometry the layout has not finished
+       updating: measured when a row was removed, it sent one region with
+       the card below at its old y, and that region rode the next commit. */
+    if (surfaceLive(window)) {
+        window->requestUpdate();
+        return;
+    }
     QTimer::singleShot(0, this, [this, window] {
         if (m_dirty.remove(window)) {
             recompute(window);
@@ -465,12 +491,38 @@ void Surface::recompute(QQuickWindow *window)
        The coloured fringe this inset was originally added to fix came from
        saturation above 1.0 boosting the backdrop in that same edge pixel.
        That belongs to the theme's blur.saturation, not to the region. */
+    /* Each panel's rect is re-derived from the item itself rather than
+       trusted from the last time QML happened to report it. mapRectToScene
+       goes through every transform between the item and the window — the
+       card's slide and swipe Translate, the stack displacing it — so what
+       is sent is where the item is drawn on this frame. The QML side used to
+       have to notice every ancestor move and re-register, and the arrival
+       slide simply did not, which left the blur parked where the card
+       started until it landed. */
+    auto &live = m_regions[window];
+    for (auto c = live.begin(); c != live.end(); ++c) {
+        if (auto *item = qobject_cast<QQuickItem *>(c.key())) {
+            if (item->window() == window && item->width() > 0 && item->height() > 0) {
+                c->rect = item->mapRectToScene(QRectF(0, 0, item->width(), item->height()));
+            }
+        }
+    }
+    const QRect surfaceRect(0, 0, window->width(), window->height());
     QRegion combined;
-    for (const Contribution &c : *it) {
+    for (const Contribution &c : std::as_const(live)) {
         combined += roundedRegion(innerRect(c.rect), qRound(c.radius));
     }
+    /* A card mid-slide is partly past the surface edge; nothing outside the
+       surface can be blurred, so do not describe it. */
+    combined &= surfaceRect;
     const QRegion &effectRegion = combined;
     if (combined.isEmpty()) {
+        /* Every panel is past the surface edge — the last frames of a card
+           sliding off. An empty region would mean "blur the whole surface"
+           to KWindowEffects, so give the blur back instead. */
+        if (m_lastEffect.contains(window)) {
+            clearBlur(window);
+        }
         return;
     }
     if (m_maskedWindows.contains(window)) {
