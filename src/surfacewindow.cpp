@@ -208,13 +208,28 @@ void Surface::setPanelRegion(QQuickWindow *window, QObject *panel, const QRectF 
        outliving its window — which multi-monitor hotplug will produce as soon
        as surfaces are created per output — would have called setMask() on
        freed memory. */
-    if (!m_regions.contains(window)) {
+    if (!m_watched.contains(window)) {
+        m_watched.insert(window);
         connect(window, &QObject::destroyed, this, [this, window]() {
+            m_watched.remove(window);
             m_regions.remove(window);
             m_maskedWindows.remove(window);
             m_lastMask.remove(window);
             m_lastEffect.remove(window);
             m_dirty.remove(window);
+        });
+        /* A hide destroys the wl_surface, and the compositor drops the blur
+           and contrast objects attached to it. Our record of what it was
+           last given has to go with them: keeping it would make the next
+           showing match the cache in recompute() and skip re-sending, so the
+           card would come back unblurred. */
+        connect(window, &QWindow::visibleChanged, this, [this, window](bool visible) {
+            if (!visible) {
+                m_lastEffect.remove(window);
+                m_lastMask.remove(window);
+                return;
+            }
+            scheduleRecompute(window);
         });
     }
 
@@ -410,9 +425,26 @@ void Surface::setInputFollowsPanels(QQuickWindow *window, bool on)
     }
 }
 
+bool Surface::surfaceLive(QQuickWindow *window)
+{
+    return window && window->isVisible() && window->handle();
+}
+
 void Surface::recompute(QQuickWindow *window)
 {
     if (!window || !blurAvailable()) {
+        return;
+    }
+    /* The window can have hidden between scheduleRecompute() and this pass —
+       the last card leaving takes the whole popup window with it — and hiding
+       destroys the wl_surface the effects hang off. KWin answers a blur
+       region set on a dead surface with a protocol error, and a protocol
+       error is fatal to the client: the daemon exits and the session has no
+       notifications at all until systemd restarts it. Observed as
+       "ext_background_effect_surface_v1: tried to set blur region on
+       destroyed surface". The next showing re-applies through
+       visibleChanged. */
+    if (!surfaceLive(window)) {
         return;
     }
     const auto it = m_regions.constFind(window);
@@ -475,10 +507,19 @@ void Surface::recompute(QQuickWindow *window)
 
 void Surface::clearBlur(QQuickWindow *window)
 {
-    if (window) {
-        m_lastEffect.remove(window);
-        KWindowEffects::enableBlurBehind(window, false);
+    if (!window) {
+        return;
     }
+    m_lastEffect.remove(window);
+    /* Nothing to give back once the surface is gone — the compositor dropped
+       the blur object along with it — and asking anyway is the fatal
+       protocol error described in recompute(). This is the path a card
+       destroyed on its way out takes, which is exactly when the window it
+       sat in is hiding. */
+    if (!surfaceLive(window)) {
+        return;
+    }
+    KWindowEffects::enableBlurBehind(window, false);
 }
 
 void Surface::applyContrast(QQuickWindow *window,
@@ -521,8 +562,12 @@ void Surface::applyContrast(QQuickWindow *window,
 
 void Surface::clearContrast(QQuickWindow *window)
 {
-    if (window) {
-        m_lastEffect.remove(window);
-        KWindowEffects::enableBackgroundContrast(window, false);
+    if (!window) {
+        return;
     }
+    m_lastEffect.remove(window);
+    if (!surfaceLive(window)) {
+        return;   // see clearBlur()
+    }
+    KWindowEffects::enableBackgroundContrast(window, false);
 }

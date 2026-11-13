@@ -127,6 +127,14 @@ public:
     Q_INVOKABLE void clearContrast(QQuickWindow *window);
 
 private:
+    /* Whether the window still has a wl_surface to hang a region off.
+
+       handle() alone is not enough: QtWayland keeps the QPlatformWindow alive
+       across a hide and destroys only the wl_surface under it, so a hidden
+       window can report a perfectly good handle with nothing left to attach
+       to. Visibility is what actually tracks the surface. */
+    static bool surfaceLive(QQuickWindow *window);
+
     void recompute(QQuickWindow *window);
     /* recompute() at most once per event-loop pass per window. A dismissal
        moves every card on every frame, and each move used to rebuild and
@@ -157,6 +165,12 @@ private:
        blur for the length of an animation. */
     QHash<QQuickWindow *, QRegion> m_lastEffect;
     QSet<QQuickWindow *> m_dirty;
+    /* Windows whose lifecycle signals we have already hooked up. Keyed
+       separately from m_regions because that entry is erased whenever a
+       window's last panel goes away and recreated when the next one arrives,
+       which would stack a fresh pair of connections on this singleton every
+       time the popup stack emptied and filled again. */
+    QSet<QQuickWindow *> m_watched;
 
     qreal m_contrast = 0.32;
     qreal m_intensity = 0.92;
