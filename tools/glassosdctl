@@ -320,6 +320,7 @@ case "$cmd" in
       "Enabled|true" "Limit|4" "IndicateHidden|true" "CoalesceThreshold|3" \
       "CoalesceWindowMs|20000" "DoNotDisturb|false" "AutoCollapseOver|3" \
       "HistoryLength|200" "IdleThresholdMs|120000" "HoverPause|true" \
+      "Timeout|6000" "TimeoutLow|4000" "TimeoutCritical|0" \
     | while IFS='|' read -r k d; do
         v=$(cfg_read $G "$k")
         if [ -n "$v" ]; then printf '  %-18s %s\n' "$k" "$v"
@@ -598,10 +599,36 @@ LockscreenPrivacy Portal Focus " in
     [ -n "${1:-}" ] || { echo "usage: glassosdctl search <text>" >&2; exit 1; }
     call Search s "$*" >/dev/null && echo "searching history for: $*" ;;
   sounds)
-    # An unset key reads as empty with exit 0, so the fallback has to test the
-    # value rather than the status — the same trap cfg_or exists for.
-    theme=$(kreadconfig6 --file kdeglobals --group Sounds --key Theme 2>/dev/null)
-    echo "sound theme in use: ${theme:-freedesktop (default)}"
+    # Whatever libcanberra will actually use, which is not kdeglobals: this
+    # read kdeglobals [Sounds] Theme, a key libcanberra never consults, and so
+    # reported "freedesktop" on a desktop whose real theme was ocean. That
+    # sent a whole afternoon's debugging at a sound-theme problem that did not
+    # exist. canberra takes the theme from GtkSettings' gtk-sound-theme-name.
+    theme=""
+    src=""
+    if command -v gsettings >/dev/null 2>&1; then
+      t=$(gsettings get org.gnome.desktop.sound theme-name 2>/dev/null | tr -d "'\"")
+      [ -n "$t" ] && { theme=$t; src="org.gnome.desktop.sound theme-name"; }
+    fi
+    if [ -z "$theme" ]; then
+      for f in "${XDG_CONFIG_HOME:-$HOME/.config}/gtk-4.0/settings.ini" \
+               "${XDG_CONFIG_HOME:-$HOME/.config}/gtk-3.0/settings.ini"; do
+        [ -f "$f" ] || continue
+        t=$(sed -n 's/^[[:space:]]*gtk-sound-theme-name[[:space:]]*=[[:space:]]*//p' "$f" | tail -1)
+        [ -n "$t" ] && { theme=$t; src="$f"; break; }
+      done
+    fi
+    if [ -n "$theme" ]; then
+      echo "sound theme in use: $theme (from $src)"
+    else
+      echo "sound theme in use: freedesktop (default)"
+    fi
+    # Worth saying plainly, because the directory listing below invites the
+    # opposite conclusion: a name absent from your theme is NOT silent.
+    # libcanberra follows the theme's Inherits chain and then falls back to
+    # freedesktop, per the XDG sound naming spec — so ocean, which ships no
+    # message.oga and carries no Inherits line, still plays freedesktop's.
+    echo "names it does not provide fall back to the freedesktop theme"
     echo
     echo "names your themes provide (any of these works as sound=NAME):"
     for d in "${XDG_DATA_HOME:-$HOME/.local/share}/sounds" /usr/share/sounds; do
