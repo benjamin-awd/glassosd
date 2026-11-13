@@ -29,7 +29,14 @@ Window {
        edge, not by its own surface a margin's width short of it. */
     readonly property bool slideRight: Style.slideTravel > 0 && (Appearance.notifyAnchors & 8)
     readonly property int edgeInset: slideRight ? Appearance.notifyMarginX : 0
-    width: Style.notifyWidth + Style.shadowPad * 2 + edgeInset
+    /* Never larger than the screen. Nothing else bounds the surface: a large
+       Limit (or Limit=0) with a burst, or a theme value with a few zeros too
+       many, asked for layer surfaces of 458x16409 and 80362x80065, and past
+       the GL size limit eglSwapBuffers segfaulted. Clipped cards are a far
+       better failure than no notification daemon. */
+    readonly property int maxW: screen ? screen.width : 4096
+    readonly property int maxH: screen ? screen.height : 4096
+    width: Math.min(maxW, Style.notifyWidth + Style.shadowPad * 2 + edgeInset)
 
     /* Grows while on screen, never shrinks; back to fitting once hidden.
 
@@ -44,7 +51,7 @@ Window {
     readonly property bool bottomAnchored: (Appearance.notifyAnchors & 2) && !(Appearance.notifyAnchors & 1)
     readonly property real neededHeight: column.implicitHeight + Style.shadowPad * 2
     property real heldHeight: 1
-    height: Math.max(1, heldHeight)
+    height: Math.max(1, Math.min(maxH, heldHeight))
     onNeededHeightChanged: if (neededHeight > heldHeight) heldHeight = neededHeight
 
     visible: Modules.notifications && (list.count > 0 || NotificationModel.hiddenCount > 0)

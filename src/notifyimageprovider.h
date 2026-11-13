@@ -31,7 +31,7 @@ public:
            its copy when the popup closes, but history keeps it. */
         const ImageData d = id.startsWith(QLatin1Char('h'))
             ? m_history->imageFor(QStringView(id).mid(1).toUInt())
-            : m_model->imageFor(id.toUInt());
+            : m_model->imageFor(id.section(QLatin1Char('/'), 0, 0).toUInt());   // "<id>/<rev>"
         /* toImage() validates the header against the buffer and refuses
            anything but 8-bit RGB or RGBA, so a malformed hint is a missing
            image here rather than a read past the end of it. */

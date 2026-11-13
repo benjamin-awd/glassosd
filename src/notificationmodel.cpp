@@ -8,6 +8,7 @@
 #include "soundplayer.h"
 
 #include <memory>
+#include <utility>
 
 #include <QDateTime>
 
@@ -146,7 +147,7 @@ QVariant NotificationModel::data(const QModelIndex &index, int role) const
            mako's behaviour: an inline image is what the app actually wants
            shown, whereas app_icon is often a generic fallback. */
         if (n.image.isValid()) {
-            return QStringLiteral("image://notifyimage/%1").arg(n.id);
+            return QStringLiteral("image://notifyimage/%1/%2").arg(n.id).arg(n.imageRev);
         }
         return n.appIcon.isEmpty() ? QString() : QStringLiteral("image://icon/") + n.appIcon;
     default:
@@ -401,6 +402,7 @@ bool NotificationModel::coalesce(const Notification &n)
 uint NotificationModel::insert(Notification n)
 {
     n.received = QDateTime::currentDateTimeUtc();
+    n.imageRev = ++m_imageRev;
     if (n.timeoutMs < 0) {
         n.timeoutMs = defaultTimeoutFor(n.urgency);
     }
@@ -413,11 +415,6 @@ uint NotificationModel::insert(Notification n)
         update();
         return n.id;
     }
-    if (coalesce(n)) {
-        update();
-        return n.id;
-    }
-
     /* An identical repeat, inside the window a rule asked for.
 
        set_stack_tag alone is not enough. It collapses repeats onto the card
@@ -467,6 +464,16 @@ uint NotificationModel::insert(Notification n)
        closed signal path. */
     if (quiet()) {
         Q_EMIT notificationClosed(n.id, CloseReason::Expired);
+        return n.id;
+    }
+
+    /* Coalescing comes after every check that can suppress the popup, not
+       before them. It used to run first, so the second message of a burst
+       sailed past Do Not Disturb, an application's Inhibit() (a screen share),
+       a rule's no-popup and the lock screen's Hide, and was shown merged —
+       with its text — while all of those said nothing should appear. */
+    if (coalesce(n)) {
+        update();
         return n.id;
     }
 
@@ -523,40 +530,42 @@ bool NotificationModel::closeId(uint id, uint reason)
     return false;
 }
 
-int NotificationModel::dismissAll()
+int NotificationModel::closeEverything(uint reason)
 {
-    /* Ids are collected first: closeId() mutates both containers, so
-       iterating them directly would invalidate the loop underneath itself. */
+    /* The queue goes first, and without update(). Closing a queued entry
+       through closeId() runs update(), which promotes the next queued entry
+       into a displayed row, which the loop then closes, which promotes the
+       next: every queued notification became an on-screen card animating
+       out, all at once. 400 queued from distinct senders made the popup
+       surface 458x20295, past the GL size limit, and the daemon segfaulted
+       in eglSwapBuffers — from pressing Clear all, or opening the centre. */
+    const QList<Notification> waiting = std::exchange(m_waiting, {});
+    for (const Notification &n : waiting) {
+        Q_EMIT notificationClosed(n.id, reason);
+    }
+
+    /* Ids are collected first: closeId() mutates m_displayed, so iterating
+       it directly would invalidate the loop underneath itself. */
     QList<uint> ids;
-    ids.reserve(m_displayed.size() + m_waiting.size());
+    ids.reserve(m_displayed.size());
     for (const Notification &n : std::as_const(m_displayed)) {
         ids << n.id;
     }
-    for (const Notification &n : std::as_const(m_waiting)) {
-        ids << n.id;
-    }
     for (uint id : std::as_const(ids)) {
-        closeId(id, CloseReason::Dismissed);
+        closeId(id, reason);
     }
-    return int(ids.size());
+    update();
+    return int(waiting.size() + ids.size());
+}
+
+int NotificationModel::dismissAll()
+{
+    return closeEverything(CloseReason::Dismissed);
 }
 
 int NotificationModel::hideForCentre()
 {
-    /* Same collect-then-close shape as dismissAll(), and for the same reason:
-       closeId() mutates the containers being iterated. */
-    QList<uint> ids;
-    ids.reserve(m_displayed.size() + m_waiting.size());
-    for (const Notification &n : std::as_const(m_displayed)) {
-        ids << n.id;
-    }
-    for (const Notification &n : std::as_const(m_waiting)) {
-        ids << n.id;
-    }
-    for (uint id : std::as_const(ids)) {
-        closeId(id, CloseReason::Expired);
-    }
-    return int(ids.size());
+    return closeEverything(CloseReason::Expired);
 }
 
 void NotificationModel::setHoverPause(bool on)

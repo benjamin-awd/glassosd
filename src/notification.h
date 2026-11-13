@@ -107,6 +107,9 @@ struct Notification {
     QString replyPlaceholder;
     QString replySubmitText;
     ImageData image;
+    /* Changes whenever image may have: part of the image URL, so a
+       replacement's new picture is not served from QML's cache. */
+    uint imageRev = 0;
 
     QDateTime received;
     QDateTime displayedAt;  // set when it first reaches the visible list

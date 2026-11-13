@@ -183,6 +183,10 @@ Q_SIGNALS:
 
 private:
     void update();
+    int closeEverything(uint reason);   // dismissAll() and hideForCentre()
+    /* Bumped per arrival or replacement so the image URL changes with the
+       pixels; QML caches image://notifyimage/<id> by URL otherwise. */
+    uint m_imageRev = 0;
     void expireTick();
     void finishClose(uint id);
     int indexOfDisplayed(uint id) const;

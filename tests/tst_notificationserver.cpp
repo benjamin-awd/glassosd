@@ -17,6 +17,7 @@
     calling it directly exercises the same path.
 */
 #include "historymodel.h"
+#include <QSet>
 #include "iconprovider.h"
 #include "notificationmodel.h"
 #include "notificationserver.h"
@@ -202,11 +203,11 @@ private Q_SLOTS:
 
         Fixture f;
         const uint id = f.notify(QStringLiteral("ok"), {{QStringLiteral("image-data"), imageHint(img)}});
-        QCOMPARE(f.icon(id), QStringLiteral("image://notifyimage/%1").arg(id));
+        QVERIFY(f.icon(id).startsWith(QStringLiteral("image://notifyimage/%1/").arg(id)));
 
         NotifyImageProvider provider(&f.model, &f.history);
         QSize size;
-        const QImage out = provider.requestImage(QString::number(id), &size, {});
+        const QImage out = provider.requestImage(f.icon(id).mid(int(qstrlen("image://notifyimage/"))), &size, {});
         QCOMPARE(out.size(), QSize(3, 2));
         QCOMPARE(QColor(out.pixel(2, 1)).red(), 200);
         QCOMPARE(QColor(out.pixel(2, 1)).blue(), 20);
@@ -333,6 +334,97 @@ private Q_SLOTS:
     /* A path has to load as a file. QIcon::fromTheme() only knows names:
        given a path, Qt's own loader finds nothing, and the notification
        showed a generic icon or none. */
+    // ---- hardening ----------------------------------------------------------
+
+    /* A replaces_id naming nothing used to be taken as the new id, without
+       advancing the counter: the next notification from anyone got the same
+       number and silently replaced the first sender's card. */
+    void unissuedReplacesIdGetsAFreshId()
+    {
+        Fixture f;
+        const uint a = f.notify(QStringLiteral("first"));
+        const uint b = f.notify(QStringLiteral("claims a future id"), {}, {}, {}, a + 2);
+        QVERIFY(b != a + 2);
+        const uint c = f.notify(QStringLiteral("next"));
+        const uint d = f.notify(QStringLiteral("after"));
+        QVERIFY(f.rowOf(b) >= 0 || f.model.rowCount() >= 3);
+        QCOMPARE(QSet<uint>({a, b, c, d}).size(), 4);
+        QCOMPARE(f.role(b, NotificationModel::SummaryRole).toString(), QStringLiteral("claims a future id"));
+    }
+
+    /* body-images is not advertised; an <img> made the daemon fetch URLs and
+       open local paths (a FIFO froze it). Unterminated tags got through to
+       StyledText as well, so stray '<' is escaped. */
+    void sanitiserDropsImagesAndEscapesStrayTags()
+    {
+        using NotificationWire::sanitiseMarkup;
+        QCOMPARE(sanitiseMarkup(QStringLiteral("a <img src=\"http://x/y\"> b")), QStringLiteral("a  b"));
+        QCOMPARE(sanitiseMarkup(QStringLiteral("x <img src=\"http://x/y\"")), QStringLiteral("x &lt;img src=\"http://x/y\""));
+        QCOMPARE(sanitiseMarkup(QStringLiteral("<b>bold</b> <i>it</i> <a href=\"u\">l</a><br>")),
+                 QStringLiteral("<b>bold</b> <i>it</i> <a href=\"u\">l</a><br>"));
+        QCOMPARE(sanitiseMarkup(QStringLiteral("I <3 you")), QStringLiteral("I &lt;3 you"));
+        QCOMPARE(sanitiseMarkup(QStringLiteral("x < y & <b>z</b>")), QStringLiteral("x &lt; y & <b>z</b>"));
+        QCOMPARE(sanitiseMarkup(QStringLiteral("<html><tt>crash</tt></html>")), QStringLiteral("crash"));
+        QCOMPARE(sanitiseMarkup(QStringLiteral("a<br/>b")), QStringLiteral("a<br/>b"));
+    }
+
+    /* QML caches image://notifyimage/<id> by URL, so a replacement carrying
+       new pixels kept showing the old picture. */
+    void replacingAnImageChangesItsUrl()
+    {
+        Fixture f;
+        const uint id = f.notify(QStringLiteral("red"), {{QStringLiteral("image-data"), imageHint(solid(4, 4, 4, Qt::red))}});
+        const QString before = f.icon(id);
+        QCOMPARE(f.notify(QStringLiteral("green"), {{QStringLiteral("image-data"), imageHint(solid(4, 4, 4, Qt::green))}}, {}, {}, id), id);
+        QVERIFY(f.icon(id) != before);
+    }
+
+    /* Clear all closed queued entries through closeId(), whose update()
+       promoted the next one on screen: every queued notification became a
+       card at once (458x20295 surface, segfault in eglSwapBuffers). */
+    void dismissAllDoesNotPromoteTheQueue()
+    {
+        Fixture f;
+        f.model.setExitMs(200);
+        f.model.setLimit(3);
+        for (int i = 0; i < 50; ++i) {
+            f.server.handleNotify(QStringLiteral("Sender%1").arg(i), 0, {}, QStringLiteral("q%1").arg(i),
+                                  QStringLiteral("b"), {}, {}, 0);
+        }
+        int inserted = 0;
+        connect(&f.model, &QAbstractItemModel::rowsInserted, this, [&](const QModelIndex &, int a, int b) { inserted += b - a + 1; });
+        QCOMPARE(f.model.dismissAll(), 50);
+        QCOMPARE(inserted, 0);
+        QCOMPARE(f.model.hiddenCount(), 0);
+    }
+
+    /* Coalescing ran before the quiet checks, so the second message of a
+       burst popped up through Do Not Disturb. */
+    void coalescingRespectsDoNotDisturb()
+    {
+        Fixture f;
+        f.model.setCoalesce(2, 20000);
+        f.model.setDoNotDisturb(true);
+        for (int i = 0; i < 4; ++i) {
+            f.notify(QStringLiteral("burst %1").arg(i));
+        }
+        QCOMPARE(f.model.rowCount(), 0);
+        QCOMPARE(f.model.hiddenCount(), 0);
+    }
+
+    /* Fields with no cap ballooned memory and history.json. */
+    void otherFieldsAreCapped()
+    {
+        Fixture f;
+        const uint id = f.server.handleNotify(QString(1 << 20, QLatin1Char('A')), 0, QString(1 << 20, QLatin1Char('i')),
+                                              QStringLiteral("s"), QStringLiteral("b"),
+                                              {QStringLiteral("k"), QString(1 << 20, QLatin1Char('L'))}, {}, 0);
+        QVERIFY(f.role(id, NotificationModel::AppNameRole).toString().size() <= NotificationServer::maxName);
+        const QVariantList acts = f.role(id, NotificationModel::ActionsRole).toList();
+        QCOMPARE(acts.size(), 1);
+        QVERIFY(acts.first().toMap().value(QStringLiteral("label")).toString().size() <= NotificationServer::maxActionText);
+    }
+
     void iconProviderLoadsFilePaths()
     {
         QTemporaryDir dir;

@@ -15,6 +15,7 @@
 #pragma once
 
 #include <QDir>
+#include <QFileInfo>
 #include <QIcon>
 #include <QImageReader>
 #include <QQuickImageProvider>
@@ -47,7 +48,10 @@ public:
            that will not load falls through to the theme, and so to the
            fallback icon, like any other missing icon. */
         const QString path = id.startsWith(QLatin1String("file:")) ? QUrl(id).toLocalFile() : id;
-        if (QDir::isAbsolutePath(path)) {
+        /* Regular files only. This runs on the GUI thread (a Pixmap provider
+           is synchronous), and opening a FIFO blocks until a writer appears:
+           an image-path naming one froze the whole daemon indefinitely. */
+        if (QDir::isAbsolutePath(path) && QFileInfo(path).isFile()) {
             QImageReader reader(path);
             const int asked = qMax(requested.width(), requested.height());
             const QSize full = reader.size();
@@ -63,7 +67,11 @@ public:
             }
         }
 
-        QIcon icon = QIcon::fromTheme(id);
+        /* A path that did not load is not handed to the theme lookup:
+           QIcon::fromTheme() treats an absolute name as a file and opens it
+           itself, which is the same blocking open on a FIFO by another door
+           (seen from the history list's delegates). */
+        QIcon icon = QDir::isAbsolutePath(path) ? QIcon() : QIcon::fromTheme(id);
         if (icon.isNull() && id.endsWith(QLatin1String("-symbolic"))) {
             icon = QIcon::fromTheme(id.chopped(9));
         }

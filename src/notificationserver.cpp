@@ -85,7 +85,20 @@ namespace NotificationWire
 {
 QString sanitiseMarkup(const QString &in)
 {
-    static const QRegularExpression tag(QStringLiteral("<\\s*/?\\s*([a-zA-Z0-9]+)[^>]*>"));
+    /* The name has to follow '<' (or '</') directly and a tag cannot contain
+       another '<'. Looser, "x < y & <b>" was read as one tag named "y" and
+       the text inside it vanished. */
+    static const QRegularExpression tag(QStringLiteral("</?([a-zA-Z][a-zA-Z0-9]*)(?:\\s[^<>]*)?/?>"));
+
+    /* Text between tags is passed on with any '<' escaped. Otherwise a tag
+       the expression cannot see — one with no closing '>', at the end of the
+       string — still reaches StyledText, which parses it anyway: an
+       unterminated <img src="http://..."> was fetched. */
+    auto text = [](QStringView s) {
+        QString t = s.toString();
+        t.replace(QLatin1Char('<'), QLatin1String("&lt;"));
+        return t;
+    };
 
     QString out;
     out.reserve(in.size());
@@ -93,17 +106,22 @@ QString sanitiseMarkup(const QString &in)
     auto it = tag.globalMatch(in);
     while (it.hasNext()) {
         const QRegularExpressionMatch m = it.next();
-        out += in.mid(last, m.capturedStart() - last);
+        out += text(QStringView(in).mid(last, m.capturedStart() - last));
         const QString name = m.captured(1).toLower();
+        /* No <img>. We do not advertise body-images, and honouring it made
+           the daemon fetch http(s) URLs (a read receipt for anyone who can
+           send a notification, and a network channel out of a sandbox with
+           none, through the portal's title) and open local paths on the GUI
+           thread, where a FIFO froze it until something wrote to it. */
         if (name == QLatin1String("b") || name == QLatin1String("i")
             || name == QLatin1String("u") || name == QLatin1String("a")
-            || name == QLatin1String("img") || name == QLatin1String("br")) {
+            || name == QLatin1String("br")) {
             out += m.captured(0);
         }
         /* Anything else is dropped, keeping its inner text. */
         last = m.capturedEnd();
     }
-    out += in.mid(last);
+    out += text(QStringView(in).mid(last));
     return out.trimmed();
 }
 
@@ -241,6 +259,15 @@ uint NotificationServer::handleNotify(const QString &appName,
     if (NotificationId::isPortal(replacesId)) {
         replacesId = 0;
     }
+    /* An id that names nothing on screen or queued is a new notification,
+       which is what the spec asks for. Taken as given, it was an id this
+       server had not issued yet: m_nextId later handed the same number to
+       another application, whose notification then silently overwrote the
+       first one's card. A card that is closing counts as gone too, or the
+       replacement would share an id with the row animating away. */
+    if (replacesId != 0 && !m_model->isLive(replacesId)) {
+        replacesId = 0;
+    }
     n.id = replacesId != 0 ? replacesId : m_nextId++;
 
     for (auto it = hints.constBegin(); it != hints.constEnd(); ++it) {
@@ -280,6 +307,14 @@ uint NotificationServer::handleNotify(const QString &appName,
             /* Validated before anything reads the pixels, and scaled down
                to the size it will be drawn at. qdbus_cast takes the hint
                still marshalled, as it arrives, or already a struct. */
+            /* The signature is checked first: demarshalling a struct of any
+               other shape trips a libdbus type check, and libdbus aborts the
+               process on those. Any client on the bus could kill the daemon
+               with one hint of the wrong type. */
+            if (value.canConvert<QDBusArgument>()
+                && value.value<QDBusArgument>().currentSignature() != QLatin1String("(iiibiiay)")) {
+                continue;
+            }
             const ImageData img = qdbus_cast<ImageData>(value);
             if (img.isValid()) {
                 n.image = ImageData::fromImage(img.toImage());
@@ -313,6 +348,16 @@ uint NotificationServer::deliver(Notification &n)
     n.summary.truncate(maxSummary);
     n.body.truncate(maxBody);
     n.actions = capActions(n.actions);
+    for (QString &a : n.actions) {
+        a.truncate(maxActionText);
+    }
+    n.appName.truncate(maxName);
+    n.desktopEntry.truncate(maxName);
+    n.category.truncate(maxName);
+    n.stackTag.truncate(maxName);
+    n.appIcon.truncate(maxPath);
+    n.replyPlaceholder.truncate(maxActionText);
+    n.replySubmitText.truncate(maxActionText);
 
     /* A portal notification carries a sandbox-verified application id and
        little else: no display name, no icon. Notify() usually omits both too,

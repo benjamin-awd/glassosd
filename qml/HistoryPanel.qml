@@ -774,6 +774,7 @@ Window {
 
                                         Text {
                                             text: model.appName
+                                            textFormat: Text.PlainText    // app_name is not markup and is not sanitised
                                             color: Style.foregroundMuted
                                             font.family: Style.fontFamily
                                             font.pointSize: Style.fontSize - 2
@@ -901,6 +902,7 @@ Window {
                                             Text {
                                                 Layout.fillWidth: true
                                                 text: model.summary
+                                                textFormat: Text.StyledText
                                                 color: Style.foreground
                                                 font.family: Style.fontFamily
                                                 font.pointSize: Style.fontSize
@@ -912,6 +914,7 @@ Window {
                                                 Layout.fillWidth: true
                                                 visible: text !== ""
                                                 text: model.body
+                                                textFormat: Text.StyledText   // same rendering as the popup; the daemon sanitises it
                                                 color: Style.foregroundDim
                                                 font.family: Style.fontFamily
                                                 font.pointSize: Style.fontSize - 1

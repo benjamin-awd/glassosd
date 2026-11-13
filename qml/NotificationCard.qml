@@ -767,6 +767,7 @@ Item {
                     Layout.fillWidth: true
                     visible: Appearance.notifyHeader.includes("appname")
                     text: root.entry.appName
+                    textFormat: Text.PlainText    // app_name is not markup and is not sanitised
                     /* macOS runs three lines — app, then sender or subject,
                        then the message — and makes the first one bold in
                        ordinary case. It was uppercase and letter-spaced,
@@ -791,6 +792,7 @@ Item {
                         Layout.fillWidth: true
                         visible: text !== ""
                         text: root.entry.summary
+                        textFormat: Text.StyledText   // sanitised by the daemon; AutoText guessed per message
                         /* Critical urgency is marked on whichever line comes
                            first, so it is never on a line that is hidden. */
                         color: root.entry.urgency === 2

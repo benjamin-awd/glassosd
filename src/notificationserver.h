@@ -46,6 +46,12 @@ public:
     static constexpr int maxActions = 8;
     static constexpr int maxSummary = 1024;
     static constexpr int maxBody = 64 * 1024;
+    /* Everything else a sender controls. Uncapped, one 8 MB app_name took
+       the daemon from 180 MB to 656 MB resident, ten took it to 2 GB, and
+       every one was written into history.json and re-read at each start. */
+    static constexpr int maxName = 256;        // app_name, desktop-entry, category, stack tag
+    static constexpr int maxPath = 4096;       // app_icon / image-path: PATH_MAX
+    static constexpr int maxActionText = 256;  // action keys and labels, reply texts
 
     /* Claims org.freedesktop.Notifications. Returns false if something else
        already owns it — during development that is dunst, still running. */
