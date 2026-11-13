@@ -524,7 +524,7 @@ Item {
            wedge is what a stack of rounded cards actually looks like; the
            mismatched shapes were something else entirely. */
         flatBottom: false
-        implicitHeight: body.implicitHeight + Style.notifyPadding * 2
+        implicitHeight: body.implicitHeight + Style.notifyPadTop + Style.notifyPadBottom
 
         Component.onCompleted: refreshBlur()
         onWidthChanged: refreshBlur()

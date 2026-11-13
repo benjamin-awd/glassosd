@@ -96,6 +96,7 @@ QtObject {
        separate token from the box. */
     readonly property int notifyPadTop: Math.round(tnum("spacing.notifyPadTop", notifyPadding))
     readonly property int notifyPadRight: Math.round(tnum("spacing.notifyPadRight", notifyPadding))
+    readonly property int notifyPadBottom: Math.round(tnum("spacing.notifyPadBottom", notifyPadding))
     readonly property int notifyIconBox: Math.round(tnum("size.notifyIconBox", notifyIconSize + 8))
     readonly property int notifyAppIcon: Math.round(tnum("size.notifyAppIcon", notifyIconSize + 6))
     readonly property int notifyIconGap: Math.round(tnum("spacing.notifyIconGap", 10))
