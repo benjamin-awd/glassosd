@@ -87,10 +87,8 @@ Item {
        nearest the edge, which softens the clip against the screen edge. A
        card that stays where it is has nothing but the fade, so it keeps the
        full ramp. */
-    opacity: (stacked ? Style.cardBackground.a : 1.0)
-             * (Style.slideTravel > 0 ? Math.min(1.0, reveal * 4.0) : reveal)
+    opacity: (Style.slideTravel > 0 ? Math.min(1.0, reveal * 4.0) : reveal)
              * (Style.slideTravel > 0 ? 1.0 : (1.0 - 0.8 * swipeProgress))
-    layer.enabled: stacked
 
     /* Quint rather than Cubic: Material's "emphasized" curves are far steeper
        than a plain ease, and the gentle version reads as a dissolve rather
@@ -319,16 +317,6 @@ Item {
        call per turn rather than one per property write. */
     onSwipeXChanged: Qt.callLater(refreshRegions)
 
-    layer.effect: MultiEffect {
-        shadowEnabled: true
-        shadowColor: Style.shadowColor
-        shadowBlur: Style.shadowBlur
-        blurMax: Style.shadowBlurMax
-        shadowOpacity: Style.shadowOpacity
-        shadowVerticalOffset: Style.shadowYOffset
-        autoPaddingEnabled: true
-    }
-
     /* The ListView moves this delegate when a card above it goes away. The
        GlassPanel inside does not move relative to *us*, so none of its own
        geometry handlers fire, and the input region it registered — which is
@@ -421,62 +409,102 @@ Item {
        doubled, no corner has a wedge to hide, and the offset can go back to
        being small. Inside the layer they are ordinary opaque shapes stacked in
        z order, which is what they always wanted to be. */
-    Repeater {
-        id: sheets
-        model: root.stackDepth
-        delegate: Rectangle {
-            id: sheetRect
-            required property int index
+    /* The flattened stack is the *surfaces only*: the sheets plus an opaque
+       stand-in for the card's own fill, rendered into one layer and faded to
+       the card alpha as a whole (see above for why). The card itself sits on
+       top of this with a transparent fill, so its text, icon and edge are
+       drawn at full strength. When the card's content lived inside the faded
+       layer it was faded with it, which went unnoticed at alpha 0.83 and
+       read as greyed-out text and a washed-out icon at the macOS theme's
+       0.60. */
+    Item {
+        id: stackSurface
+        anchors.fill: parent
+        z: -1
+        visible: root.stacked
+        opacity: Style.cardBackground.a
+        layer.enabled: root.stacked
+        layer.effect: MultiEffect {
+            shadowEnabled: true
+            shadowColor: Style.shadowColor
+            shadowBlur: Style.shadowBlur
+            blurMax: Style.shadowBlurMax
+            shadowOpacity: Style.shadowOpacity
+            shadowVerticalOffset: Style.shadowYOffset
+            autoPaddingEnabled: true
+        }
 
-            z: -1 - index
-            anchors.horizontalCenter: parent.horizontalCenter
-            width: card.width - (index + 1) * Style.stackInset * 2
-            y: Style.stackDrop(index)
+        Rectangle {
+            x: card.x
+            y: card.y
+            width: card.width
             height: card.height
-            radius: Style.stackRadius
-            color: root.stacked ? Style.opaque(Style.cardStackEdge) : Style.cardStackEdge
-            /* The same lit edge the card carries. Without it the sheets had a
-               fill and nothing else, so where one ended and the next began
-               there was no boundary at all — same colour, no border, and no
-               seam since a single sheet does not need one. The strip below the
-               card rendered as one undifferentiated ledge rather than as two
-               cards, and the silhouette went soft exactly where the card's own
-               crisp edge stopped. */
+            radius: card.radius
             antialiasing: true
+            color: {
+                const base = Style.opaque(Style.cardBackground)
+                return cardHover.pressed ? Style.lift(base, 1.28) : base
+            }
+            Behavior on color { ColorAnimation { duration: 90 } }
+        }
 
-            /* Over the fill rather than as the border, for the reason given
-               in GlassPanel: a border replaces the fill in its band. */
-            Rectangle {
-                anchors.fill: parent
-                radius: parent.radius
-                color: "transparent"
-                border.color: Style.glassEdge
-                border.width: Style.edgeWidth
+        Repeater {
+            id: sheets
+            model: root.stackDepth
+            delegate: Rectangle {
+                id: sheetRect
+                required property int index
+
+                z: -1 - index
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: card.width - (index + 1) * Style.stackInset * 2
+                y: Style.stackDrop(index)
+                height: card.height
+                radius: Style.stackRadius
+                color: root.stacked ? Style.opaque(Style.cardStackEdge) : Style.cardStackEdge
+                /* The same lit edge the card carries. Without it the sheets had a
+                   fill and nothing else, so where one ended and the next began
+                   there was no boundary at all — same colour, no border, and no
+                   seam since a single sheet does not need one. The strip below the
+                   card rendered as one undifferentiated ledge rather than as two
+                   cards, and the silhouette went soft exactly where the card's own
+                   crisp edge stopped. */
                 antialiasing: true
-            }
 
-            /* Registered so the compositor blurs behind the sliver too. The
-               region is this rectangle exactly; the part of it behind the card
-               simply lands inside the card's own region, and regions union. */
-            function refreshSheet() {
-                if (!Window.window)
-                    return
-                const p = mapToItem(null, 0, 0)
-                const r = Qt.rect(p.x, p.y, width, height)
-                Surface.setPanelRegion(Window.window, sheetRect, r, radius)
-            }
-            Component.onCompleted: refreshSheet()
-            onYChanged: refreshSheet()
-            onWidthChanged: refreshSheet()
-            onHeightChanged: refreshSheet()
-            Component.onDestruction: if (Window.window) Surface.clearPanelRegion(Window.window, sheetRect)
+                /* Over the fill rather than as the border, for the reason given
+                   in GlassPanel: a border replaces the fill in its band. */
+                Rectangle {
+                    anchors.fill: parent
+                    radius: parent.radius
+                    color: "transparent"
+                    border.color: Style.glassEdge
+                    border.width: Style.edgeWidth
+                    antialiasing: true
+                }
 
-            /* No seam. With a single sheet the only boundary that matters is
-               between it and the card, and the card's own bottom edge already
-               draws that. A seam along the sheet's bottom would be a dark line
-               under the outermost edge of the whole stack, which is not a
-               boundary between anything. The references separate the layers by
-               inset and tone alone, and so do we. */
+                /* Registered so the compositor blurs behind the sliver too. The
+                   region is this rectangle exactly; the part of it behind the card
+                   simply lands inside the card's own region, and regions union. */
+                function refreshSheet() {
+                    if (!Window.window)
+                        return
+                    const p = mapToItem(null, 0, 0)
+                    const r = Qt.rect(p.x, p.y, width, height)
+                    Surface.setPanelRegion(Window.window, sheetRect, r, radius)
+                }
+                Component.onCompleted: refreshSheet()
+                onYChanged: refreshSheet()
+                onWidthChanged: refreshSheet()
+                onHeightChanged: refreshSheet()
+                Component.onDestruction: if (Window.window) Surface.clearPanelRegion(Window.window, sheetRect)
+
+                /* No seam. With a single sheet the only boundary that matters is
+                   between it and the card, and the card's own bottom edge already
+                   draws that. A seam along the sheet's bottom would be a dark line
+                   under the outermost edge of the whole stack, which is not a
+                   boundary between anything. The references separate the layers by
+                   inset and tone alone, and so do we. */
+            }
         }
     }
 
@@ -497,9 +525,12 @@ Item {
            animated and the region is a fixed rectangle, so a card that changes
            size leaves its blurred patch behind; a colour change moves nothing
            and needs no region update. */
+        /* Grouped, the fill is drawn by stackSurface beneath; this panel
+           keeps only its edge and content. */
         surfaceColor: {
-            const base = root.stacked ? Style.opaque(Style.cardBackground)
-                                      : Style.cardBackground
+            if (root.stacked)
+                return "transparent"
+            const base = Style.cardBackground
             return cardHover.pressed ? Style.lift(base, 1.28) : base
         }
         Behavior on surfaceColor { ColorAnimation { duration: 90 } }
