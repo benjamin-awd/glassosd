@@ -238,6 +238,7 @@ void Surface::setPanelRegion(QQuickWindow *window, QObject *panel, const QRectF 
             m_lastEffect.remove(window);
             m_dirty.remove(window);
             m_blurOrphaned.remove(window);
+            m_blurHeld.remove(window);
         });
         window->installEventFilter(this);
         /* A hide destroys the wl_surface, and the compositor drops the blur
@@ -249,6 +250,9 @@ void Surface::setPanelRegion(QQuickWindow *window, QObject *panel, const QRectF 
             if (!visible) {
                 m_lastEffect.remove(window);
                 m_lastMask.remove(window);
+                /* The surface the hold applied to is gone; the next showing
+                   starts blurred. */
+                m_blurHeld.remove(window);
                 return;
             }
             scheduleRecompute(window);
@@ -568,6 +572,9 @@ void Surface::recompute(QQuickWindow *window)
             window->requestUpdate();
         }
     }
+    if (m_blurHeld.contains(window)) {
+        return;   // held off by the window's owner; see holdBlur()
+    }
     if (m_lastEffect.contains(window) && m_lastEffect.value(window) == effectRegion) {
         return;   // the compositor already has exactly this
     }
@@ -595,6 +602,26 @@ void Surface::clearBlur(QQuickWindow *window)
     }
     KWindowEffects::enableBlurBehind(window, false);
     m_blurOrphaned.insert(window);
+}
+
+void Surface::holdBlur(QQuickWindow *window, bool held)
+{
+    if (!window) {
+        return;
+    }
+    if (held) {
+        if (m_blurHeld.contains(window)) {
+            return;
+        }
+        m_blurHeld.insert(window);
+        clearBlur(window);
+        clearContrast(window);
+        return;
+    }
+    if (m_blurHeld.remove(window)) {
+        m_lastEffect.remove(window);
+        scheduleRecompute(window);
+    }
 }
 
 void Surface::applyContrast(QQuickWindow *window,

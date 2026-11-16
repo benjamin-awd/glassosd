@@ -62,11 +62,26 @@ Window {
         if (!OsdModel.active && panel.opacity === 0) {
             if (++emptyFrames >= 2)
                 drained = true
+            else
+                /* Ask for the second frame. Once opacity is 0 nothing in the
+                   scene changes, so Qt has no reason to draw again; waiting
+                   for a swap that never comes left the window mapped,
+                   transparent, for hours. */
+                win.update()
         } else {
             emptyFrames = 0
         }
     }
     property int emptyFrames: 0
+
+    /* Backstop for the drain: if the compositor stops sending frame
+       callbacks (output off, session locked), the swaps above never arrive.
+       Unmap anyway once the fade has had ample time to finish. */
+    Timer {
+        interval: Style.animOut + 1000
+        running: win.visible && !OsdModel.active && !win.drained
+        onTriggered: win.drained = true
+    }
 
     Component.onCompleted: {
         /* Anchor from [Appearance] OsdPosition: Top (1), Bottom (2), or 0 for
@@ -120,6 +135,7 @@ Window {
             panel.syncShown()
             if (OsdModel.active) {
                 panel.blurCleared = false
+                Surface.holdBlur(win, false)
                 panel.refreshBlur()
             }
         }
@@ -168,8 +184,11 @@ Window {
         onOpacityChanged: {
             if (!shown && opacity < 0.15 && !blurCleared) {
                 blurCleared = true
-                Surface.clearBlur(win)
-                Surface.clearContrast(win)
+                /* Held, not just cleared: clearing alone was undone on the
+                   next frame by Surface's per-frame recompute, and a pill
+                   whose size changed while hidden came back as an empty
+                   blurred box. */
+                Surface.holdBlur(win, true)
             }
         }
 

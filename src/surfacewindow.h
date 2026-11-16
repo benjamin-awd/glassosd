@@ -113,6 +113,12 @@ public:
     Q_INVOKABLE void setOutput(QQuickWindow *window, const QString &preference);
     Q_INVOKABLE QStringList outputs() const;
     Q_INVOKABLE void clearBlur(QQuickWindow *window);
+    /* Keep a window's blur and contrast off while it stays mapped, until
+       released or until the window hides. clearBlur() alone does not stick:
+       recompute() runs on every frame's afterAnimating, sees no cached
+       region, and sends the blur straight back. The input mask still
+       follows the panels while held. */
+    Q_INVOKABLE void holdBlur(QQuickWindow *window, bool held);
     /* Ask KWin to draw this window over the lock screen (kde_lockscreen_overlay_v1).
 
        While locked, KWin draws only the greeter, input methods and surfaces
@@ -192,6 +198,9 @@ private:
        eventFilter(): KWindowEffects keeps a blur object for these that
        nothing will tidy up if the surface is destroyed. */
     QSet<QQuickWindow *> m_blurOrphaned;
+
+    /* Windows whose blur is held off; see holdBlur(). */
+    QSet<QQuickWindow *> m_blurHeld;
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
