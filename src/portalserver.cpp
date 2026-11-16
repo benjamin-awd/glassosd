@@ -252,10 +252,22 @@ void PortalServer::addNotification(const QString &appId,
         n.timeoutMs = 0;
     }
     /* Hiding the whole notification is the stronger request, so it wins if a
-       sender somehow asks for both. */
-    if (hints.contains(QLatin1String("hide-on-lockscreen"))) {
+       sender somehow asks for both.
+
+       Two spellings each. The frontend validates display-hint against its own
+       list and rejects anything else with InvalidArgument, and that list says
+       "lock-screen" (xdg-desktop-portal src/notification.c, 1.22.1). Its
+       interface XML said "lockscreen" until upstream corrected the docs, and
+       only the documented spelling was matched here — so neither hint could
+       ever take effect through a real portal: the one spelling never arrives,
+       the other was never recognised. The old one is kept for anything that
+       calls this backend directly. */
+    const auto hinted = [&hints](const char *wire, const char *documented) {
+        return hints.contains(QLatin1String(wire)) || hints.contains(QLatin1String(documented));
+    };
+    if (hinted("hide-on-lock-screen", "hide-on-lockscreen")) {
         n.lockPrivacy = Notification::LockPrivacy::Hide;
-    } else if (hints.contains(QLatin1String("hide-content-on-lockscreen"))) {
+    } else if (hinted("hide-content-on-lock-screen", "hide-content-on-lockscreen")) {
         n.lockPrivacy = Notification::LockPrivacy::HideContent;
     }
 

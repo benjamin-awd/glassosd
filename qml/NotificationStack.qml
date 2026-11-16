@@ -92,6 +92,9 @@ Window {
                                false, 0, Appearance.notifyLayer)
         Surface.setInputFollowsPanels(win, true)
         Surface.setOutput(win, Appearance.notifyOutput)
+        /* Drawn over the lock screen; what a locked card shows is decided in
+           NotificationModel::data(). Not the history panel or the OSD. */
+        Surface.allowOnLockScreen(win)
     }
 
     /* Follow a position change made while the daemon is running. Without

@@ -79,13 +79,30 @@ QVariant NotificationModel::data(const QModelIndex &index, int role) const
     }
     const Notification &n = m_displayed.at(index.row());
 
-    /* Withheld rather than removed: the card still shows that something
-       arrived, and unlocking reveals it without the sender resending. */
-    if (m_screenLocked && effectiveLockPrivacy(n) == Notification::LockPrivacy::HideContent) {
+    if (m_screenLocked) {
+        /* Nothing on a lock screen acts on the sender's behalf. KWin routes
+           pointer input to a lock-screen overlay, so a button drawn here could
+           be pressed by whoever is at the machine — "Delete", "Approve",
+           "Mark as read" — without unlocking it. The keyboard stays with the
+           greeter, so a reply field could not be typed into anyway. */
         switch (role) {
-        case SummaryRole: return tr("Notification hidden");
-        case BodyRole:    return QString();
-        default:          break;
+        case ActionsRole:          return QVariantList();
+        case HasDefaultActionRole: return false;
+        case InlineReplyRole:      return false;
+        default:                   break;
+        }
+        /* Withheld rather than removed: the card still shows that something
+           arrived, and unlocking reveals it without the sender resending.
+           The inline image goes with the text: it is a chat avatar, a photo
+           preview, a QR code — content, not branding. The app icon stays. */
+        if (effectiveLockPrivacy(n) == Notification::LockPrivacy::HideContent) {
+            switch (role) {
+            case SummaryRole: return tr("Notification hidden");
+            case BodyRole:    return QString();
+            case IconSourceRole:
+                return n.appIcon.isEmpty() ? QString() : QStringLiteral("image://icon/") + n.appIcon;
+            default:          break;
+            }
         }
     }
 
@@ -636,7 +653,7 @@ void NotificationModel::dismiss(uint id)
 
 void NotificationModel::sendReply(uint id, const QString &text)
 {
-    if (text.isEmpty()) {
+    if (text.isEmpty() || m_screenLocked) {
         return;
     }
     Q_EMIT replied(id, text);
@@ -652,6 +669,9 @@ constexpr int kActivationTokenWaitMs = 200;
 
 void NotificationModel::activate(QQuickWindow *window, uint id, const QString &key)
 {
+    if (m_screenLocked) {
+        return;   // see data(): acting needs the session unlocked
+    }
     const int row = indexOfDisplayed(id);
     const QString appId = row >= 0 ? m_displayed.at(row).desktopEntry : QString();
 
@@ -688,6 +708,9 @@ void NotificationModel::activate(QQuickWindow *window, uint id, const QString &k
 
 void NotificationModel::invokeAction(uint id, const QString &key)
 {
+    if (m_screenLocked) {
+        return;
+    }
     Q_EMIT actionInvoked(id, key);
     closeId(id, CloseReason::Dismissed);
 }
@@ -803,6 +826,12 @@ void NotificationModel::expireTick()
     if (m_userIdle) {
         return;
     }
+    /* Likewise while locked. A card on the lock screen is waiting for someone
+       to come back, and expiring it there means it was never read; on unlock
+       setScreenLocked() restarts the dwell, as resuming from idle does. */
+    if (m_screenLocked) {
+        return;
+    }
 
     const QDateTime now = QDateTime::currentDateTimeUtc();
     QList<uint> expired;
@@ -893,7 +922,7 @@ void NotificationModel::setLockPrivacyDefault(Notification::LockPrivacy policy)
     m_lockDefault = policy;
     if (m_screenLocked && !m_displayed.isEmpty()) {
         Q_EMIT dataChanged(index(0), index(m_displayed.size() - 1),
-                           {SummaryRole, BodyRole});
+                           {SummaryRole, BodyRole, IconSourceRole});
     }
 }
 
@@ -910,16 +939,35 @@ void NotificationModel::setScreenLocked(bool locked)
        re-showing it on unlock would be a second arrival the sender never
        made. */
     if (m_screenLocked) {
+        /* The queue first. Cards held back by the display limit were promoted
+           by update() as the displayed ones below closed, and lived out their
+           timeouts on the lock screen as if Hide had never been asked for. */
+        for (int i = m_waiting.size() - 1; i >= 0; --i) {
+            if (effectiveLockPrivacy(m_waiting.at(i)) == Notification::LockPrivacy::Hide) {
+                const uint id = m_waiting.takeAt(i).id;
+                Q_EMIT notificationClosed(id, CloseReason::Expired);
+            }
+        }
         const QList<Notification> shown = m_displayed;
         for (const Notification &n : shown) {
             if (!n.closing && effectiveLockPrivacy(n) == Notification::LockPrivacy::Hide) {
                 closeId(n.id, CloseReason::Expired);
             }
         }
+    } else {
+        /* Expiry was held while locked (see the tick). Whatever is still up
+           gets its full dwell from now, when someone can finally read it. */
+        const QDateTime now = QDateTime::currentDateTimeUtc();
+        for (Notification &n : m_displayed) {
+            n.displayedAt = now;
+        }
     }
 
     /* The rest only changed how they read, so redraw them in place. */
     if (!m_displayed.isEmpty()) {
-        Q_EMIT dataChanged(index(0), index(m_displayed.size() - 1), {SummaryRole, BodyRole});
+        Q_EMIT dataChanged(index(0), index(m_displayed.size() - 1),
+                           {SummaryRole, BodyRole, IconSourceRole, ActionsRole,
+                            HasDefaultActionRole, InlineReplyRole});
     }
+    Q_EMIT screenLockedChanged();
 }

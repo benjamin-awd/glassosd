@@ -33,6 +33,10 @@ class NotificationModel : public QAbstractListModel
     /* Cards on screen that are not already on their way out. */
     Q_PROPERTY(int liveCount READ liveCount NOTIFY liveCountChanged)
     Q_PROPERTY(bool doNotDisturb READ doNotDisturb WRITE setDoNotDisturb NOTIFY doNotDisturbChanged)
+    /* Read by the card to put away what only makes sense unlocked: its menu
+       (snooze, settings) and "Show N more", both of which open windows the
+       lock screen will not draw. */
+    Q_PROPERTY(bool screenLocked READ screenLocked NOTIFY screenLockedChanged)
     Q_PROPERTY(int exitMs READ exitMs WRITE setExitMs)
 
 public:
@@ -168,6 +172,7 @@ Q_SIGNALS:
     void hiddenCountChanged();
     void liveCountChanged();
     void doNotDisturbChanged();
+    void screenLockedChanged();
     void inhibitedChanged();
     void notificationClosed(uint id, uint reason);
     void actionInvoked(uint id, const QString &key);
@@ -215,7 +220,9 @@ private:
     bool m_indicateHidden = true;
     bool m_dnd = false;
     bool m_screenLocked = false;
-    Notification::LockPrivacy m_lockDefault = Notification::LockPrivacy::Show;
+    /* HideContent, as macOS does by default: the lock screen says something
+       arrived and from which app, and the words wait for whoever unlocks. */
+    Notification::LockPrivacy m_lockDefault = Notification::LockPrivacy::HideContent;
     Notification::LockPrivacy effectiveLockPrivacy(const Notification &n) const;
     bool m_inhibited = false;
     bool m_busyQuiet = false;

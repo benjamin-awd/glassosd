@@ -113,6 +113,22 @@ public:
     Q_INVOKABLE void setOutput(QQuickWindow *window, const QString &preference);
     Q_INVOKABLE QStringList outputs() const;
     Q_INVOKABLE void clearBlur(QQuickWindow *window);
+    /* Ask KWin to draw this window over the lock screen (kde_lockscreen_overlay_v1).
+
+       While locked, KWin draws only the greeter, input methods and surfaces
+       marked this way (scene/windowitem.cpp computeVisibility) — every other
+       layer surface, overlay layer included, is simply not drawn, and is sent
+       no frame callbacks. The mark has to be made while the surface is
+       unmapped, and is lost whenever it is unmapped again: KWin recreates the
+       layer-shell window on unmap (layershellv1window.cpp handleUnmapped), and
+       QtWayland unmaps on every hide. So this re-sends it each time QtWayland
+       gives the surface a new role, the way Plasma Mobile does.
+
+       What is drawn there is the model's business — see
+       NotificationModel::data() for what a locked card withholds. A no-op on
+       compositors without the protocol, and for sandboxed clients, which KWin
+       does not offer it to. */
+    Q_INVOKABLE void allowOnLockScreen(QQuickWindow *window);
 
     /* Blur alone over a dark desktop just looks like a dark panel — there is
        nothing interesting to blur. What actually reads as "glass" is the

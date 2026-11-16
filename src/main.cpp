@@ -354,10 +354,12 @@ int main(int argc, char *argv[])
         if (v == QLatin1String("hide")) {
             return Notification::LockPrivacy::Hide;
         }
-        if (v == QLatin1String("hide-content") || v == QLatin1String("hidecontent")) {
-            return Notification::LockPrivacy::HideContent;
+        if (v == QLatin1String("show")) {
+            return Notification::LockPrivacy::Show;
         }
-        return Notification::LockPrivacy::Show;
+        /* Unset, "hide-content", or a value nobody recognises. Failing towards
+           withholding the text is the safe direction for a privacy setting. */
+        return Notification::LockPrivacy::HideContent;
     };
     notifications->setLockPrivacyDefault(
         lockPolicy(KConfigGroup(cfg, QStringLiteral("Notifications"))

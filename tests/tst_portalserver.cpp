@@ -345,6 +345,7 @@ private Q_SLOTS:
     void lockingLeavesOrdinaryNotificationsAlone()
     {
         Fixture f;
+        f.model.setLockPrivacyDefault(Notification::LockPrivacy::Show);
         f.add(QStringLiteral("org.example.App"), QStringLiteral("a"),
               {{QStringLiteral("title"), v(QStringLiteral("Still here"))}});
 
@@ -352,6 +353,84 @@ private Q_SLOTS:
         QCOMPARE(f.rows(), 1);
         QCOMPARE(f.role(0, NotificationModel::SummaryRole).toString(),
                  QStringLiteral("Still here"));
+    }
+
+    /* The spelling the portal frontend actually forwards. xdg-desktop-portal
+       validates display-hint against its own list, which says "lock-screen",
+       and rejects the documented "lockscreen" outright — so only these two
+       ever reach a backend from a real application. */
+    void wireSpellingOfTheLockScreenHintsIsHonoured()
+    {
+        Fixture f;
+        f.model.setScreenLocked(true);
+        f.add(QStringLiteral("org.example.Bank"), QStringLiteral("a"),
+              {{QStringLiteral("title"), v(QStringLiteral("Payment received"))},
+               {QStringLiteral("display-hint"), v(QStringList{QStringLiteral("hide-on-lock-screen")})}});
+        QCOMPARE(f.rows(), 0);
+
+        f.add(QStringLiteral("org.example.Bank"), QStringLiteral("b"),
+              {{QStringLiteral("title"), v(QStringLiteral("Balance low"))},
+               {QStringLiteral("display-hint"),
+                v(QStringList{QStringLiteral("hide-content-on-lock-screen")})}});
+        f.model.setLockPrivacyDefault(Notification::LockPrivacy::Show);
+        QCOMPARE(f.rows(), 1);
+        QCOMPARE(f.role(0, NotificationModel::SummaryRole).toString(),
+                 QStringLiteral("Notification hidden"));
+    }
+
+    /* Saying nothing gets the macOS default: the card, not the words. */
+    void unhintedNotificationsHideTheirContentByDefault()
+    {
+        Fixture f;
+        f.add(QStringLiteral("org.example.App"), QStringLiteral("a"),
+              {{QStringLiteral("title"), v(QStringLiteral("Jane Doe"))},
+               {QStringLiteral("body"), v(QStringLiteral("See you at 7"))}});
+        f.model.setScreenLocked(true);
+        QCOMPARE(f.rows(), 1);
+        QCOMPARE(f.role(0, NotificationModel::SummaryRole).toString(),
+                 QStringLiteral("Notification hidden"));
+        QVERIFY(f.role(0, NotificationModel::BodyRole).toString().isEmpty());
+    }
+
+    /* Cards held back by the display limit are promoted as the visible ones
+       close. Locking used to close only the visible ones, so the queued
+       Hide cards came straight back out onto the lock screen. */
+    void lockingAlsoDropsQueuedHiddenNotifications()
+    {
+        Fixture f;
+        f.model.setLimit(1);
+        for (const char *id : {"a", "b", "c"}) {
+            f.add(QStringLiteral("org.example.Bank%1").arg(QLatin1String(id)), QLatin1String(id),
+                  {{QStringLiteral("title"), v(QStringLiteral("Payment %1").arg(QLatin1String(id)))},
+                   {QStringLiteral("display-hint"), v(QStringList{QStringLiteral("hide-on-lock-screen")})}});
+        }
+        QCOMPARE(f.rows(), 1);
+        QCOMPARE(f.model.hiddenCount(), 2);
+
+        f.model.setScreenLocked(true);
+        QCOMPARE(f.model.liveCount(), 0);
+        QCOMPARE(f.model.hiddenCount(), 0);
+    }
+
+    /* Nothing on the lock screen may act for the sender: KWin hands a
+       lock-screen overlay the pointer, so a drawn button could be pressed
+       without unlocking. Shown again on unlock. */
+    void lockedCardsOfferNoActions()
+    {
+        Fixture f;
+        f.model.setLockPrivacyDefault(Notification::LockPrivacy::Show);
+        f.add(QStringLiteral("org.example.Chat"), QStringLiteral("a"),
+              {{QStringLiteral("title"), v(QStringLiteral("Jane Doe"))},
+               {QStringLiteral("default-action"), v(QStringLiteral("open"))}});
+        QCOMPARE(f.role(0, NotificationModel::HasDefaultActionRole).toBool(), true);
+
+        f.model.setScreenLocked(true);
+        QCOMPARE(f.role(0, NotificationModel::HasDefaultActionRole).toBool(), false);
+        QVERIFY(f.role(0, NotificationModel::ActionsRole).toList().isEmpty());
+        QCOMPARE(f.role(0, NotificationModel::SummaryRole).toString(), QStringLiteral("Jane Doe"));
+
+        f.model.setScreenLocked(false);
+        QCOMPARE(f.role(0, NotificationModel::HasDefaultActionRole).toBool(), true);
     }
 
     /* "All content of the notification will be hidden on the lockscreen." */

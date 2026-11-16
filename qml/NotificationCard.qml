@@ -685,7 +685,10 @@ Item {
                    used to sit on the card permanently, which is a lot of
                    furniture for two things wanted rarely. */
                 if (mouse.button === Qt.RightButton) {
-                    cardMenu.openAt(mouse.x, mouse.y)
+                    /* Snooze and settings open the centre, which the lock
+                       screen does not draw; it would be waiting after unlock. */
+                    if (!NotificationModel.screenLocked)
+                        cardMenu.openAt(mouse.x, mouse.y)
                     return
                 }
                 /* A click anywhere else puts the menu away rather than
@@ -880,6 +883,7 @@ Item {
                         id: moreArea
                         anchors.fill: parent
                         hoverEnabled: true
+                        enabled: !NotificationModel.screenLocked
                         onClicked: root.moreRequested()
                     }
                 }

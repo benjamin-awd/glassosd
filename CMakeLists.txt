@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 cmake_minimum_required(VERSION 3.20)
-project(glassosd VERSION 0.3.3 LANGUAGES CXX)
+project(glassosd VERSION 0.3.3 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -12,7 +12,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 find_package(ECM 6.0 REQUIRED NO_MODULE)
 set(CMAKE_MODULE_PATH ${ECM_MODULE_PATH})
 
-find_package(Qt6 6.6 REQUIRED COMPONENTS Core Gui Qml Quick DBus Widgets)
+find_package(Qt6 6.6 REQUIRED COMPONENTS Core Gui Qml Quick DBus Widgets WaylandClient GuiPrivate)
 find_package(KF6 6.0 REQUIRED COMPONENTS WindowSystem GuiAddons Config I18n GlobalAccel StatusNotifierItem IdleTime)
 find_package(LayerShellQt REQUIRED)
 
@@ -123,11 +123,17 @@ qt_add_qml_module(glassosd
     RESOURCE_PREFIX /qt/qml
 )
 
+# kde_lockscreen_overlay_v1, vendored from plasma-wayland-protocols rather than
+# depending on the whole package for one file. See Surface::allowOnLockScreen.
+qt6_generate_wayland_protocol_client_sources(glassosd
+    PRIVATE_CODE
+    FILES ${CMAKE_CURRENT_SOURCE_DIR}/protocols/kde-lockscreen-overlay-v1.xml)
+
 # The generated qmltyperegistrations.cpp includes our headers by bare name.
 target_include_directories(glassosd PRIVATE src)
 
 target_link_libraries(glassosd PRIVATE
-    Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick Qt6::DBus Qt6::Widgets
+    Qt6::Core Qt6::Gui Qt6::GuiPrivate Qt6::Qml Qt6::Quick Qt6::DBus Qt6::Widgets Qt6::WaylandClient
     KF6::WindowSystem KF6::GuiAddons KF6::ConfigCore KF6::I18n KF6::GlobalAccel KF6::StatusNotifierItem KF6::IdleTime
     LayerShellQt::Interface
     PkgConfig::DBUS1

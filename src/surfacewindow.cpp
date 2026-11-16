@@ -18,6 +18,25 @@
 #include <KConfigGroup>
 #include <KSharedConfig>
 #include <LayerShellQt/Window>
+#include <QWaylandClientExtensionTemplate>
+#include <QPlatformSurfaceEvent>
+#include <functional>
+#include <qpa/qplatformwindow_p.h>
+#include "qwayland-kde-lockscreen-overlay-v1.h"
+
+namespace
+{
+class LockscreenOverlay : public QWaylandClientExtensionTemplate<LockscreenOverlay>,
+                          public QtWayland::kde_lockscreen_overlay_v1
+{
+public:
+    LockscreenOverlay()
+        : QWaylandClientExtensionTemplate<LockscreenOverlay>(1)
+    {
+        initialize();
+    }
+};
+} // namespace
 
 namespace
 {
@@ -622,4 +641,59 @@ void Surface::clearContrast(QQuickWindow *window)
         return;   // see clearBlur()
     }
     KWindowEffects::enableBackgroundContrast(window, false);
+}
+
+void Surface::allowOnLockScreen(QQuickWindow *window)
+{
+    if (!window) {
+        return;
+    }
+    static LockscreenOverlay *overlay = new LockscreenOverlay;
+    if (!overlay->isActive()) {
+        qInfo("glassosd: kde_lockscreen_overlay_v1 not offered — notifications "
+              "will not be drawn while the session is locked");
+        return;
+    }
+
+    /* The QtWayland window exists once the QWindow has a platform window,
+       which for a window not yet shown means waiting for it. */
+    auto hook = [window]() {
+        auto *ww = window->nativeInterface<QNativeInterface::Private::QWaylandWindow>();
+        if (!ww) {
+            return false;
+        }
+        QObject::connect(ww, &QNativeInterface::Private::QWaylandWindow::surfaceRoleCreated,
+                         window, [ww]() {
+                             if (ww->surface()) {
+                                 overlay->allow(ww->surface());
+                             }
+                         });
+        return true;
+    };
+    if (hook()) {
+        return;
+    }
+    /* Not yet created. Waiting for the first visibleChanged would be too
+       late — the role, and the first buffer, exist by then and KWin rejects
+       allow() on a mapped surface with a fatal protocol error. The platform
+       surface event arrives before either. */
+    class Filter : public QObject
+    {
+    public:
+        explicit Filter(std::function<bool()> f, QObject *parent)
+            : QObject(parent), m_f(std::move(f)) {}
+        bool eventFilter(QObject *, QEvent *e) override
+        {
+            if (e->type() == QEvent::PlatformSurface
+                && static_cast<QPlatformSurfaceEvent *>(e)->surfaceEventType()
+                       == QPlatformSurfaceEvent::SurfaceCreated
+                && m_f()) {
+                deleteLater();
+            }
+            return false;
+        }
+    private:
+        std::function<bool()> m_f;
+    };
+    window->installEventFilter(new Filter(hook, window));
 }
