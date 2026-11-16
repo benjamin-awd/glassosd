@@ -13,13 +13,13 @@
 #include <QScreen>
 #include <QTimer>
 #include <QRegion>
+#include <QPlatformSurfaceEvent>
 
 #include <KWindowEffects>
 #include <KConfigGroup>
 #include <KSharedConfig>
 #include <LayerShellQt/Window>
 #include <QWaylandClientExtensionTemplate>
-#include <QPlatformSurfaceEvent>
 #include <functional>
 #include <qpa/qplatformwindow_p.h>
 #include "qwayland-kde-lockscreen-overlay-v1.h"
@@ -237,7 +237,9 @@ void Surface::setPanelRegion(QQuickWindow *window, QObject *panel, const QRectF 
             m_lastMask.remove(window);
             m_lastEffect.remove(window);
             m_dirty.remove(window);
+            m_blurOrphaned.remove(window);
         });
+        window->installEventFilter(this);
         /* A hide destroys the wl_surface, and the compositor drops the blur
            and contrast objects attached to it. Our record of what it was
            last given has to go with them: keeping it would make the next
@@ -571,6 +573,7 @@ void Surface::recompute(QQuickWindow *window)
     }
     m_lastEffect[window] = effectRegion;
     KWindowEffects::enableBlurBehind(window, true, effectRegion);
+    m_blurOrphaned.remove(window);   // tracked by KWindowEffects again
     KWindowEffects::enableBackgroundContrast(window, true,
                                              m_contrast, m_intensity, m_saturation,
                                              effectRegion);
@@ -591,6 +594,7 @@ void Surface::clearBlur(QQuickWindow *window)
         return;
     }
     KWindowEffects::enableBlurBehind(window, false);
+    m_blurOrphaned.insert(window);
 }
 
 void Surface::applyContrast(QQuickWindow *window,
@@ -696,4 +700,49 @@ void Surface::allowOnLockScreen(QQuickWindow *window)
         std::function<bool()> m_f;
     };
     window->installEventFilter(new Filter(hook, window));
+}
+
+bool Surface::eventFilter(QObject *watched, QEvent *event)
+{
+    /* Works around a KWindowEffects bug (KWindowSystem 6.31,
+       platforms/wayland/windoweffects.cpp enableBlurBehind/installBlur).
+
+       Switching blur *off* drops the window's ext_background_effect object,
+       then creates a fresh one to send the empty region, and finally stops
+       watching the window for surfaceDestroyed, so nothing is left to free
+       that object when the surface goes. If the platform window is then
+       destroyed and recreated, the next enableBlurBehind(true) reuses the
+       stale object, and set_blur_region on it is a fatal protocol error:
+       "ext_background_effect_surface_v1: tried to set blur region on
+       destroyed surface", exit status 255.
+
+       That happens when every output disappears at once: a dock unplugged,
+       or the displays going away before suspend. Qt moves the window to a
+       placeholder screen by destroying and recreating its platform window.
+       It crashed twice here (13 and 14 Nov), both on an output change. A
+       plain hide() keeps the wl_surface in Qt 6.12 and is not affected.
+
+       The fix is to switch blur back on, with a token region, just before
+       the surface is destroyed. KWindowEffects then watches the window again
+       and frees the object itself when the surface goes. Blur is switched
+       off once more after the platform window is gone, so the recreated
+       window gets no blur that recompute() did not ask for; if it already
+       has a surface by then, that leaves the same state as before, and this
+       runs again at the next destruction. */
+    if (event->type() == QEvent::PlatformSurface
+        && static_cast<QPlatformSurfaceEvent *>(event)->surfaceEventType()
+               == QPlatformSurfaceEvent::SurfaceAboutToBeDestroyed) {
+        auto *window = qobject_cast<QQuickWindow *>(watched);
+        if (window && m_blurOrphaned.contains(window)) {
+            KWindowEffects::enableBlurBehind(window, true, QRegion(0, 0, 1, 1));
+            QTimer::singleShot(0, window, [this, window] {
+                /* Unless recompute() has put real blur back in the meantime;
+                   it clears the mark when it does. */
+                if (m_blurOrphaned.contains(window)) {
+                    KWindowEffects::enableBlurBehind(window, false);
+                }
+            });
+        }
+    }
+    return QObject::eventFilter(watched, event);
 }
