@@ -172,6 +172,14 @@ private:
        time the popup stack emptied and filled again. */
     QSet<QQuickWindow *> m_watched;
 
+    /* Windows whose blur was switched off while they were on screen. See
+       eventFilter(): KWindowEffects keeps a blur object for these that
+       nothing will tidy up if the surface is destroyed. */
+    QSet<QQuickWindow *> m_blurOrphaned;
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override;
+
     qreal m_contrast = 0.32;
     qreal m_intensity = 0.92;
     qreal m_saturation = 1.35;
