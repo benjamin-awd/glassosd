@@ -180,6 +180,24 @@ int main(int argc, char *argv[])
     app.setOrganizationName(QStringLiteral("glassosd"));
     app.setQuitOnLastWindowClosed(false); // we are a daemon, not a window
 
+    /* One daemon per session. org.glassosd.Daemon is the instance lock, taken
+       before any window exists. A second copy used to lose every bus name,
+       log a warning per name, and then keep running as an OSD-only daemon
+       with its own surfaces: invisible in `systemctl status`, but still
+       drawing over the screen. Three such strays, launched by hand from a
+       test session, ran for days before anyone noticed. Controller::start()
+       re-registers the same name later; the bus answers ALREADY_OWNER, which
+       Qt reports as success. Exit 0 so RestartPreventExitStatus keeps
+       systemd from looping on a copy that has no business running. */
+    if (!QDBusConnection::sessionBus().isConnected()) {
+        fprintf(stderr, "glassosd: no session bus — not starting\n");
+        return 0;
+    }
+    if (!QDBusConnection::sessionBus().registerService(QStringLiteral("org.glassosd.Daemon"))) {
+        fprintf(stderr, "glassosd: another instance already owns org.glassosd.Daemon — exiting\n");
+        return 0;
+    }
+
     KLocalizedString::setApplicationDomain(QByteArrayLiteral("glassosd"));
 
     QQmlApplicationEngine engine;
