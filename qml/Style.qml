@@ -34,6 +34,16 @@ QtObject {
        handles the display's devicePixelRatio; this is taste on top of that. */
     readonly property real s: Appearance.scale
     function px(v) { return Math.round(v * s) }
+    /* NotifyScale, on top of Scale, for the notification card alone: bigger
+       popups without also growing the OSD and the control centre. A theme's
+       explicit notify* values are in unscaled pixels, so both multipliers
+       apply to them; a fallback is passed already in final pixels. */
+    readonly property real ns: Appearance.notifyScale
+    function npx(v) { return Math.round(v * s * ns) }
+    function nnum(key, fallback) {
+        const v = tnum(key, NaN)
+        return isNaN(v) ? Math.round(fallback) : npx(v)
+    }
 
     /* Every alpha below is tuned on the assumption that something is blurring
        behind us. sway, river and labwc do not blur at all, and translucency
@@ -54,7 +64,7 @@ QtObject {
     /* The notification card alone, so matching a platform's banner proportions
        does not also re-pad the OSD and the control centre. Falls back to
        padding, so it is invisible until a theme asks for it. */
-    readonly property int notifyPadding: Math.round(tnum("spacing.notifyPadding", padding))
+    readonly property int notifyPadding: nnum("spacing.notifyPadding", padding * ns)
     /* Fully-rounded pills curve inward at the ends, so uniform padding leaves
        content crowding the edge even though the numbers match. */
     readonly property int pillPaddingH: Math.round(tnum("spacing.pillPaddingH", px(20)))
@@ -76,7 +86,7 @@ QtObject {
     readonly property int segmentHeight: Math.round(tnum("level.segmentHeight", px(14)))
 
     // ---- Notifications ---------------------------------------------------
-    readonly property int notifyWidth: Math.round(Appearance.notifyWidth * s)
+    readonly property int notifyWidth: npx(Appearance.notifyWidth)
     /* Breathing room inside the surface so drop shadows have somewhere to
        render instead of being clipped at the window edge. */
     readonly property int shadowPad: Math.round(tnum("shadow.pad", 42))
@@ -85,7 +95,7 @@ QtObject {
     /* Large enough that detailed app icons stay readable. 21px was fine for
        flat glyphs but turned busy ones (an arrow inside a circle, say) into
        mush. Rendered at 3x into the texture so they stay crisp at 1.75 scale. */
-    readonly property int notifyIconSize: Math.round(tnum("size.notifyIcon", px(30)))
+    readonly property int notifyIconSize: nnum("size.notifyIcon", npx(30))
     /* The rest of the notification card's geometry, each defaulting to what
        the card used before it was a token. A theme matching a reference
        layout (macos.json follows Apple's own UI kit) sets them explicitly.
@@ -94,19 +104,23 @@ QtObject {
        icon in a 40pt box whose artwork is ~32pt. Linux app icons fill their
        canvas where Apple's carry a margin inside it, so the drawn size is a
        separate token from the box. */
-    readonly property int notifyPadTop: Math.round(tnum("spacing.notifyPadTop", notifyPadding))
-    readonly property int notifyPadRight: Math.round(tnum("spacing.notifyPadRight", notifyPadding))
-    readonly property int notifyPadBottom: Math.round(tnum("spacing.notifyPadBottom", notifyPadding))
-    readonly property int notifyIconBox: Math.round(tnum("size.notifyIconBox", notifyIconSize + 8))
-    readonly property int notifyAppIcon: Math.round(tnum("size.notifyAppIcon", notifyIconSize + 6))
-    readonly property int notifyIconGap: Math.round(tnum("spacing.notifyIconGap", 10))
+    readonly property int notifyPadTop: nnum("spacing.notifyPadTop", notifyPadding)
+    readonly property int notifyPadRight: nnum("spacing.notifyPadRight", notifyPadding)
+    readonly property int notifyPadBottom: nnum("spacing.notifyPadBottom", notifyPadding)
+    readonly property int notifyIconBox: nnum("size.notifyIconBox", notifyIconSize + npx(8))
+    readonly property int notifyAppIcon: nnum("size.notifyAppIcon", notifyIconSize + npx(6))
+    readonly property int notifyIconGap: nnum("spacing.notifyIconGap", npx(10))
     /* Pixel sizes for the card's text, 0 = keep the point-size scheme
        (fontSize for the title, one below for the body, two below for the
        time). Apple sets title and body both at 13px on a 16px line and
        separates them by weight alone. */
-    readonly property int notifyTextPx: Math.round(tnum("font.notifyPx", 0))
-    readonly property int notifyTimePx: Math.round(tnum("font.notifyTimePx", 0))
-    readonly property int notifyLinePx: Math.round(tnum("font.notifyLinePx", 0))
+    readonly property int notifyTextPx: nnum("font.notifyPx", 0)
+    readonly property int notifyTimePx: nnum("font.notifyTimePx", 0)
+    readonly property int notifyLinePx: nnum("font.notifyLinePx", 0)
+    /* The point-size scheme's base, for text on the card that has no px token
+       (the reply field, action buttons, the menu). */
+    readonly property int notifyFontSize: Math.max(6, Math.round(fontSize * ns))
+    readonly property int notifyRadius: Math.round(cardRadius * ns)
 
     /* Peeking card edges for a grouped stack. */
     /* Matched to the card's corner radius, deliberately.

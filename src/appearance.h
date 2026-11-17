@@ -44,6 +44,8 @@ class Appearance : public QObject
        — "I want bigger text" rather than "this screen is HiDPI". */
     Q_PROPERTY(qreal scale READ scale NOTIFY changed)
     Q_PROPERTY(int notifyWidth READ notifyWidth NOTIFY changed)
+    /* Scale again, for notification popups only, multiplied with Scale. */
+    Q_PROPERTY(qreal notifyScale READ notifyScale NOTIFY changed)
     /* How far every glass surface is pushed toward opaque, 0..1. The tuned
        alphas assume the compositor is blurring behind us; sway, river and
        friends do not blur at all, and unblurred translucency over a busy
@@ -117,6 +119,7 @@ public:
     QString centreOutput() const { return m_centreOutput; }
     qreal scale() const { return m_scale; }
     int notifyWidth() const { return m_notifyWidth; }
+    qreal notifyScale() const { return m_notifyScale; }
     qreal solidity() const { return m_solidity; }
     int notifyLayer() const { return m_notifyLayer; }
     int notifyAnchors() const { return m_notifyAnchors; }
@@ -151,6 +154,7 @@ private:
     QString m_centreOutput = QStringLiteral("current");
     qreal m_scale = 1.0;
     int m_notifyWidth = 380;
+    qreal m_notifyScale = 1.0;
     qreal m_solidity = 0.0;
     int m_notifyLayer = 2;
     int m_notifyAnchors = 1 | 8;   // Top|Right

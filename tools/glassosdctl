@@ -185,6 +185,7 @@ glassosdctl <command>
                          key used to mean. 'default' restores the full order.
                              glassosdctl widgets title,notifications,dnd
   scale [0.6-2.0]        Size multiplier for all text and spacing
+  notify-scale [0.6-2.0] Size multiplier for notification popups only (on top of scale)
   width [240-900]        Notification popup width in logical px
   solidity [0.0-1.0]     Push glass toward opaque. 0 keeps the tuned glass;
                          raise it on compositors that do not blur (sway, river)
@@ -332,7 +333,7 @@ case "$cmd" in
       "Theme|dark" "ThemeFile|(built-in)" "AccentColor|#3daee9" \
       "LevelStyle|segmented" "Output|current" \
       "NotifyOutput|(follows Output)" "OsdOutput|(follows Output)" \
-      "CentreOutput|(follows Output)" "Scale|1.0" \
+      "CentreOutput|(follows Output)" "Scale|1.0" "NotifyScale|1.0" \
       "FontSize|auto (from scale)" "BodyLines|4" "CentreBodyLines|3" \
       "NotifyWidth|380" "Solidity|0.0" "Blur|auto" "NotifyLayer|overlay" \
       "NotifyPosition|top-right" "NotifyMarginX|0" "NotifyMarginY|0" \
@@ -814,6 +815,9 @@ SNZ
   scale)
     if [ -z "${1:-}" ]; then echo "scale: $(cfg_or Appearance Scale 1.0)"
     else cfg_write Appearance Scale "$1"; echo "scale = $1"; fi ;;
+  notify-scale)
+    if [ -z "${1:-}" ]; then echo "notify-scale: $(cfg_or Appearance NotifyScale 1.0)"
+    else cfg_write Appearance NotifyScale "$1"; echo "notify-scale = $1"; fi ;;
   width)
     if [ -z "${1:-}" ]; then echo "width: $(cfg_or Appearance NotifyWidth 380)"
     else cfg_write Appearance NotifyWidth "$1"; echo "width = $1"; fi ;;

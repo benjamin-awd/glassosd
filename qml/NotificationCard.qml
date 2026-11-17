@@ -511,7 +511,7 @@ Item {
     GlassPanel {
         id: card
         width: parent.width
-        radius: Style.cardRadius
+        radius: Style.notifyRadius
         /* Opaque while stacked: the root layer carries the alpha for the whole
            stack, so anything inside it that is translucent in its own right
            would be faded twice. */
@@ -779,7 +779,7 @@ Item {
                     color: root.entry.urgency === 2 ? Style.critical
                                                     : Style.foreground
                     font.family: Style.fontFamily
-                    font.pointSize: Style.fontSize
+                    font.pointSize: Style.notifyFontSize
                     font.bold: true
                     elide: Text.ElideRight
                 }
@@ -803,7 +803,7 @@ Item {
                                ? Style.critical : Style.foreground
                         font.family: Style.fontFamily
                         font.pointSize: Style.notifyTextPx > 0 ? Style.notifyTextPx * 0.75
-                                                               : Style.fontSize
+                                                               : Style.notifyFontSize
                         lineHeightMode: Style.notifyLinePx > 0 ? Text.FixedHeight : Text.ProportionalHeight
                         lineHeight: Style.notifyLinePx > 0 ? Style.notifyLinePx : 1.0
                         /* Bold belongs to the first line. With the app name
@@ -827,7 +827,7 @@ Item {
                         color: Style.notifyTime
                         font.family: Style.fontFamily
                         font.pointSize: Style.notifyTimePx > 0 ? Style.notifyTimePx * 0.75
-                                                               : Style.fontSize - 2
+                                                               : Style.notifyFontSize - 2
                     }
                 }
 
@@ -842,7 +842,7 @@ Item {
                     color: Style.notifyBody
                     font.family: Style.fontFamily
                     font.pointSize: Style.notifyTextPx > 0 ? Style.notifyTextPx * 0.75
-                                                           : Style.fontSize - 1
+                                                           : Style.notifyFontSize - 1
                     lineHeightMode: Style.notifyLinePx > 0 ? Text.FixedHeight : Text.ProportionalHeight
                     lineHeight: Style.notifyLinePx > 0 ? Style.notifyLinePx : 1.0
                     wrapMode: Text.WordWrap
@@ -876,7 +876,7 @@ Item {
                         text: "Show " + (root.entry.groupCount - 1) + " more"
                         color: Style.foreground
                         font.family: Style.fontFamily
-                        font.pointSize: Style.fontSize - 2
+                        font.pointSize: Style.notifyFontSize - 2
                     }
 
                     MouseArea {
@@ -930,7 +930,7 @@ Item {
                             text: root.entry.replyPlaceholder
                             color: Style.foregroundDim
                             font.family: Style.fontFamily
-                            font.pointSize: Style.fontSize - 1
+                            font.pointSize: Style.notifyFontSize - 1
                         }
 
                         TextInput {
@@ -941,7 +941,7 @@ Item {
                             verticalAlignment: Text.AlignVCenter
                             color: Style.foreground
                             font.family: Style.fontFamily
-                            font.pointSize: Style.fontSize - 1
+                            font.pointSize: Style.notifyFontSize - 1
                             selectByMouse: true
                             clip: true
                             onAccepted: root.replySent(text)
@@ -963,7 +963,7 @@ Item {
                             text: root.entry.replySubmitText
                             color: Style.foreground
                             font.family: Style.fontFamily
-                            font.pointSize: Style.fontSize - 1
+                            font.pointSize: Style.notifyFontSize - 1
                         }
 
                         MouseArea {
@@ -1006,7 +1006,7 @@ Item {
                                 text: modelData.label
                                 color: Style.foreground
                                 font.family: Style.fontFamily
-                                font.pointSize: Style.fontSize - 1
+                                font.pointSize: Style.notifyFontSize - 1
                             }
 
                             MouseArea {
@@ -1091,7 +1091,7 @@ Item {
                                 text: modelData.label
                                 color: Style.foreground
                                 font.family: Style.fontFamily
-                                font.pointSize: Style.fontSize - 1
+                                font.pointSize: Style.notifyFontSize - 1
                             }
 
                             MouseArea {

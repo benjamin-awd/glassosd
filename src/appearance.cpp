@@ -97,6 +97,7 @@ void Appearance::reload()
        in a config file. */
     m_scale = qBound(0.6, g.readEntry("Scale", 1.0), 2.0);
     m_notifyWidth = qBound(240, g.readEntry("NotifyWidth", 380), 900);
+    m_notifyScale = qBound(0.6, g.readEntry("NotifyScale", 1.0), 2.0);
     m_solidity = qBound(0.0, g.readEntry("Solidity", 0.0), 1.0);
 
     /* "top" keeps popups below fullscreen windows; "overlay" puts them above.
