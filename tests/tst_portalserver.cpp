@@ -418,6 +418,33 @@ private Q_SLOTS:
                  QStringLiteral("John Roe: the code is 5678"));
     }
 
+    /* Telegram's group layout: chat name as the summary, sender in bold on
+       the body's first line. The kept name comes back as plain text. */
+    void hideBodyCanKeepABoldSenderLine()
+    {
+        QTemporaryDir dir;
+        auto cfg = KSharedConfig::openConfig(dir.filePath(QStringLiteral("rc")), KConfig::SimpleConfig);
+        KConfigGroup g(cfg, QStringLiteral("Rule 22-tg"));
+        g.writeEntry("desktop_entry", "org.example.Tg");
+        g.writeEntry("lockscreen", "hide-body");
+        g.writeEntry("lockscreen_keep", "^<b>([^<\\n]{1,60})</b>");
+
+        Fixture f;
+        f.server.loadRules(cfg);
+        f.add(QStringLiteral("org.example.Tg"), QStringLiteral("grp"),
+              {{QStringLiteral("title"), v(QStringLiteral("Weekend plans"))},
+               {QStringLiteral("markup-body"), v(QStringLiteral("<b>Alex &amp; Co</b>\nHiking Saturday?"))}});
+        f.add(QStringLiteral("org.example.Tg"), QStringLiteral("dm"),
+              {{QStringLiteral("title"), v(QStringLiteral("Jane Doe"))},
+               {QStringLiteral("body"), v(QStringLiteral("Landed!"))}});
+        f.model.setScreenLocked(true);
+        QCOMPARE(f.role(0, NotificationModel::SummaryRole).toString(), QStringLiteral("Weekend plans"));
+        QCOMPARE(f.role(0, NotificationModel::BodyRole).toString(),
+                 QStringLiteral("Alex &amp; Co: message hidden"));
+        QCOMPARE(f.role(1, NotificationModel::SummaryRole).toString(), QStringLiteral("Jane Doe"));
+        QCOMPARE(f.role(1, NotificationModel::BodyRole).toString(), QStringLiteral("Message hidden"));
+    }
+
     /* A screen share withholds content the way the lock screen does, but the
        user is at the machine, so the card stays actionable. */
     void screenSharingWithholdsContentButKeepsActions()

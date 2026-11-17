@@ -219,13 +219,16 @@ void Rules::apply(Notification &n) const
             n.lockPrivacy = *r.lockPrivacy;
         }
         if (r.lockKeep) {
-            /* Matched against plain text: the body may carry markup, and a
-               slice of markup could open a tag the card then renders. */
-            const QString plain = QTextDocumentFragment::fromHtml(n.body).toPlainText();
-            const QRegularExpressionMatch m = r.lockKeep->match(plain);
-            n.lockKeep = !m.hasMatch() ? QString()
-                       : m.lastCapturedIndex() >= 1 ? m.captured(1).trimmed()
-                                                    : m.captured(0).trimmed();
+            /* Matched against the body as stored (sanitised markup), so a
+               pattern can key on structure such as Telegram's bold sender
+               line; the result is reduced to plain text, because a slice of
+               markup could open a tag the card would then render. */
+            const QRegularExpressionMatch m = r.lockKeep->match(n.body);
+            const QString kept = !m.hasMatch() ? QString()
+                               : m.lastCapturedIndex() >= 1 ? m.captured(1)
+                                                            : m.captured(0);
+            n.lockKeep = kept.isEmpty() ? QString()
+                       : QTextDocumentFragment::fromHtml(kept).toPlainText().trimmed();
         }
     }
 }

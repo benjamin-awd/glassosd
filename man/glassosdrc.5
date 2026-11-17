@@ -439,7 +439,10 @@ as for
 Overrides the sender's own hint, since a rule is the user speaking.
 .TP
 .B lockscreen_keep
-A regular expression (not a glob) matched against the plain\-text body. Under
+A regular expression (not a glob) matched against the body as stored, which
+for a sender using body markup includes tags such as
+.BR <b> .
+The kept text is reduced to plain text. Under
 .BR hide\-body ,
 its first capture group, or the whole match if it has none, stays readable as
 "\fIkept\fP: message hidden". Meant for the sender in a group chat:
@@ -454,6 +457,13 @@ lockscreen=hide\-body
 appname=Slack
 summary=New message in *
 lockscreen_keep=^([^:\en]{1,60}):
+
+# Telegram: the chat name is the summary; in a group the
+# body opens with the sender in bold.
+[Rule 22\-telegram\-private]
+appname=Telegram*
+lockscreen=hide\-body
+lockscreen_keep=^<b>([^<\en]{1,60})</b>
 .fi
 .RE
 .TP
