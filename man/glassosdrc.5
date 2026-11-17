@@ -68,9 +68,19 @@ blank. Default false. See
 .B QUIET WHILE BUSY
 below.
 .TP
+.B ScreenSharing
+.BR private " (default) or " quiet :
+whether a screen share withholds notification content or suppresses popups
+altogether. See
+.BR "SCREEN SHARING" .
+.TP
 .B LockscreenPrivacy
 What notifications show while the session is locked:
-.BR show " (default), " hide\-content " or " hide .
+.BR show ", " hide\-body ", " hide\-content " (default) or " hide .
+.B hide\-body
+keeps the summary (for a chat app, who wrote) and withholds the body; see the
+.B lockscreen_keep
+rule key.
 .B hide\-content
 keeps the card but withholds its summary and body until the session is
 unlocked, at which point they appear without the sender resending anything.
@@ -421,6 +431,32 @@ below.
 Minutes to defer by. The notification is recorded immediately and shown later:
 it arrived, it is waiting, not lost.
 .TP
+.B lockscreen
+Lock screen and screen\-share privacy for matching notifications:
+.BR show ", " hide\-body ", " hide\-content " or " hide ,
+as for
+.BR LockscreenPrivacy .
+Overrides the sender's own hint, since a rule is the user speaking.
+.TP
+.B lockscreen_keep
+A regular expression (not a glob) matched against the plain\-text body. Under
+.BR hide\-body ,
+its first capture group, or the whole match if it has none, stays readable as
+"\fIkept\fP: message hidden". Meant for the sender in a group chat:
+.RS
+.PP
+.nf
+[Rule 20\-slack\-private]
+appname=Slack
+lockscreen=hide\-body
+
+[Rule 21\-slack\-group\-sender]
+appname=Slack
+summary=New message in *
+lockscreen_keep=^([^:\en]{1,60}):
+.fi
+.RE
+.TP
 .B repeat_window
 Seconds for which a byte\-identical repeat does not reopen a popup. History
 still records every copy.
@@ -673,11 +709,27 @@ property, the KDE extension to
 \(em so anything that already asks Plasma for quiet gets it here too.
 .PP
 .B xdg\-desktop\-portal\-kde
-inhibits notifications while the screen is being cast, which means they stop
-appearing mid\-share without glassosd having to watch for screen sharing itself.
-Screen recorders and presentation tools using the same call work for the same
-reason. There is no setting: an application explicitly asking for quiet is
-honoured.
+inhibits notifications while the screen is being cast (when Plasma's own
+"Do not disturb while screen sharing" setting is on), so glassosd learns of a
+share without watching for one itself. What it does with that is
+.B [Notifications] ScreenSharing :
+.TP
+.B private
+(default) Popups keep appearing, with their content withheld exactly as on the
+lock screen \(em
+.B LockscreenPrivacy
+and the rules'
+.B lockscreen
+key decide how much. Unlike the lock screen, actions, replies and timeouts work
+as normal: you are at the machine.
+.TP
+.B quiet
+Every popup is suppressed for the duration, as the portal asked.
+.PP
+The portal is recognised by its bus name, not by the reason it gives. Screen
+recorders and presentation tools that call
+.B Inhibit
+themselves are always honoured as quiet.
 .PP
 Inhibited notifications are suppressed on screen and still recorded, the same
 as Do Not Disturb. The point is that nobody watching your screen sees them, not

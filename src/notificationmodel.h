@@ -156,6 +156,11 @@ public:
        summary and body read as. */
     void setScreenLocked(bool locked);
     bool screenLocked() const { return m_screenLocked; }
+    /* The screen is being cast. Withholds content exactly as the lock screen
+       does, but nothing else: the user is at the machine, so actions, replies
+       and timeouts behave as normal. */
+    void setScreenSharing(bool sharing);
+    bool screenSharing() const { return m_screenSharing; }
     /* What to do with notifications whose sender expressed no preference. */
     void setLockPrivacyDefault(Notification::LockPrivacy policy);
     /* True while the notification is still displayed or queued, which is the
@@ -220,6 +225,11 @@ private:
     bool m_indicateHidden = true;
     bool m_dnd = false;
     bool m_screenLocked = false;
+    bool m_screenSharing = false;
+    /* Somebody other than the user may be looking: locked, or sharing. */
+    bool privacyActive() const { return m_screenLocked || m_screenSharing; }
+    /* Close what asked to be hidden, now that privacy has come on. */
+    void dropHiddenForPrivacy();
     /* HideContent, as macOS does by default: the lock screen says something
        arrived and from which app, and the words wait for whoever unlocks. */
     Notification::LockPrivacy m_lockDefault = Notification::LockPrivacy::HideContent;

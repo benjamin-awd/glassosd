@@ -91,6 +91,8 @@ QVariant NotificationModel::data(const QModelIndex &index, int role) const
         case InlineReplyRole:      return false;
         default:                   break;
         }
+    }
+    if (privacyActive()) {
         /* Withheld rather than removed: the card still shows that something
            arrived, and unlocking reveals it without the sender resending.
            The inline image goes with the text: it is a chat avatar, a photo
@@ -99,6 +101,20 @@ QVariant NotificationModel::data(const QModelIndex &index, int role) const
             switch (role) {
             case SummaryRole: return tr("Notification hidden");
             case BodyRole:    return QString();
+            case IconSourceRole:
+                return n.appIcon.isEmpty() ? QString() : QStringLiteral("image://icon/") + n.appIcon;
+            default:          break;
+            }
+        }
+        /* Who, not what: the summary is left alone (Slack's names the sender
+           or the conversation) and the body is reduced to what the rule's
+           lockscreen_keep chose, which is the sender in a group chat. */
+        if (effectiveLockPrivacy(n) == Notification::LockPrivacy::HideBody) {
+            switch (role) {
+            case BodyRole:
+                return n.lockKeep.isEmpty()
+                    ? tr("Message hidden")
+                    : tr("%1: message hidden").arg(n.lockKeep.toHtmlEscaped());
             case IconSourceRole:
                 return n.appIcon.isEmpty() ? QString() : QStringLiteral("image://icon/") + n.appIcon;
             default:          break;
@@ -464,7 +480,7 @@ uint NotificationModel::insert(Notification n)
     /* The sender asked not to appear on a lock screen, and one is up. It is
        already in history, which is where it will be found after unlocking —
        the same bargain a rule's no-popup makes. */
-    if (m_screenLocked && effectiveLockPrivacy(n) == Notification::LockPrivacy::Hide) {
+    if (privacyActive() && effectiveLockPrivacy(n) == Notification::LockPrivacy::Hide) {
         Q_EMIT notificationClosed(n.id, CloseReason::Expired);
         return n.id;
     }
@@ -920,7 +936,43 @@ void NotificationModel::setLockPrivacyDefault(Notification::LockPrivacy policy)
         return;
     }
     m_lockDefault = policy;
-    if (m_screenLocked && !m_displayed.isEmpty()) {
+    if (privacyActive() && !m_displayed.isEmpty()) {
+        Q_EMIT dataChanged(index(0), index(m_displayed.size() - 1),
+                           {SummaryRole, BodyRole, IconSourceRole});
+    }
+}
+
+void NotificationModel::dropHiddenForPrivacy()
+{
+    /* The queue first. Cards held back by the display limit were promoted
+       by update() as the displayed ones below closed, and lived out their
+       timeouts on the lock screen as if Hide had never been asked for. */
+    for (int i = m_waiting.size() - 1; i >= 0; --i) {
+        if (effectiveLockPrivacy(m_waiting.at(i)) == Notification::LockPrivacy::Hide) {
+            const uint id = m_waiting.takeAt(i).id;
+            Q_EMIT notificationClosed(id, CloseReason::Expired);
+        }
+    }
+    const QList<Notification> shown = m_displayed;
+    for (const Notification &n : shown) {
+        if (!n.closing && effectiveLockPrivacy(n) == Notification::LockPrivacy::Hide) {
+            closeId(n.id, CloseReason::Expired);
+        }
+    }
+}
+
+void NotificationModel::setScreenSharing(bool sharing)
+{
+    if (m_screenSharing == sharing) {
+        return;
+    }
+    m_screenSharing = sharing;
+    qInfo("glassosd: screen sharing %s, notification content %s",
+          sharing ? "started" : "stopped", sharing ? "withheld" : "restored");
+    if (sharing) {
+        dropHiddenForPrivacy();
+    }
+    if (!m_displayed.isEmpty()) {
         Q_EMIT dataChanged(index(0), index(m_displayed.size() - 1),
                            {SummaryRole, BodyRole, IconSourceRole});
     }
@@ -939,21 +991,7 @@ void NotificationModel::setScreenLocked(bool locked)
        re-showing it on unlock would be a second arrival the sender never
        made. */
     if (m_screenLocked) {
-        /* The queue first. Cards held back by the display limit were promoted
-           by update() as the displayed ones below closed, and lived out their
-           timeouts on the lock screen as if Hide had never been asked for. */
-        for (int i = m_waiting.size() - 1; i >= 0; --i) {
-            if (effectiveLockPrivacy(m_waiting.at(i)) == Notification::LockPrivacy::Hide) {
-                const uint id = m_waiting.takeAt(i).id;
-                Q_EMIT notificationClosed(id, CloseReason::Expired);
-            }
-        }
-        const QList<Notification> shown = m_displayed;
-        for (const Notification &n : shown) {
-            if (!n.closing && effectiveLockPrivacy(n) == Notification::LockPrivacy::Hide) {
-                closeId(n.id, CloseReason::Expired);
-            }
-        }
+        dropHiddenForPrivacy();
     } else {
         /* Expiry was held while locked (see the tick). Whatever is still up
            gets its full dwell from now, when someone can finally read it. */

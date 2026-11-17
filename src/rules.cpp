@@ -7,6 +7,7 @@
 
 #include <KConfigGroup>
 #include <QDebug>
+#include <QTextDocumentFragment>
 
 namespace
 {
@@ -87,6 +88,23 @@ void Rules::load(const KSharedConfig::Ptr &config)
         r.run = g.readEntry("run", QString());
         r.snoozeMinutes = g.readEntry("snooze", -1);
         r.repeatWindowSec = g.readEntry("repeat_window", -1);
+        if (g.hasKey("lockscreen")) {
+            r.lockPrivacy = Notification::parseLockPrivacy(g.readEntry("lockscreen", QString()));
+            if (!r.lockPrivacy) {
+                qWarning("glassosd: rule %s: lockscreen must be show, hide-body, "
+                         "hide-content or hide", qUtf8Printable(r.name));
+            }
+        }
+        const QString keep = g.readEntry("lockscreen_keep", QString());
+        if (!keep.isEmpty()) {
+            QRegularExpression re(keep);
+            if (re.isValid()) {
+                r.lockKeep = re;
+            } else {
+                qWarning("glassosd: rule %s: lockscreen_keep is not a valid regex: %s",
+                         qUtf8Printable(r.name), qUtf8Printable(re.errorString()));
+            }
+        }
 
         m_rules.append(r);
     }
@@ -196,6 +214,18 @@ void Rules::apply(Notification &n) const
         }
         if (r.snoozeMinutes > 0) {
             n.snoozeMinutes = r.snoozeMinutes;
+        }
+        if (r.lockPrivacy) {
+            n.lockPrivacy = *r.lockPrivacy;
+        }
+        if (r.lockKeep) {
+            /* Matched against plain text: the body may carry markup, and a
+               slice of markup could open a tag the card then renders. */
+            const QString plain = QTextDocumentFragment::fromHtml(n.body).toPlainText();
+            const QRegularExpressionMatch m = r.lockKeep->match(plain);
+            n.lockKeep = !m.hasMatch() ? QString()
+                       : m.lastCapturedIndex() >= 1 ? m.captured(1).trimmed()
+                                                    : m.captured(0).trimmed();
         }
     }
 }

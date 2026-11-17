@@ -121,15 +121,27 @@ public:
     /* Run a rule's run= command for this notification. */
     static void runRuleCommand(const Notification &n);
     void unInhibit(uint cookie);
-    bool inhibited() const { return !m_inhibits.isEmpty(); }
+    /* Quiet requested by anything that is not a screen share being treated
+       as private (see setShareMode). */
+    bool inhibited() const;
+    /* What a screen share does. xdg-desktop-portal-kde asks for quiet while
+       casting; "private" turns that request into lock-screen privacy instead
+       (cards still appear, their content withheld per LockscreenPrivacy and
+       the rules), "quiet" honours it as asked and suppresses every popup. */
+    void setSharePrivate(bool on);
 
 private:
     struct Inhibition {
         QString service;
         QString desktopEntry;
         QString reason;
+        /* Asked for by the desktop portal, which only does so for a screen
+           cast. Decided from the caller's bus name, not the reason string:
+           that is translated, and any client can claim one. */
+        bool screenShare = false;
     };
     void refreshInhibited();
+    bool m_sharePrivate = true;
 
     QHash<uint, Inhibition> m_inhibits;
     uint m_nextInhibit = 1;

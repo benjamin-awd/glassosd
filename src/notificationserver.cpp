@@ -6,6 +6,7 @@
 #include "notificationserver.h"
 
 #include <QDBusConnection>
+#include <QDBusConnectionInterface>
 #include <QDBusMessage>
 #include <QProcess>
 #include <QProcessEnvironment>
@@ -553,8 +554,15 @@ uint NotificationServer::inhibit(const QString &desktopEntry, const QString &rea
         m_inhibitWatcher->addWatchedService(service);
     }
 
+    bool screenShare = false;
+    if (!service.isEmpty()) {
+        const auto owner = QDBusConnection::sessionBus().interface()->serviceOwner(
+            QStringLiteral("org.freedesktop.impl.portal.desktop.kde"));
+        screenShare = owner.isValid() && owner.value() == service;
+    }
+
     const uint cookie = m_nextInhibit++;
-    m_inhibits.insert(cookie, Inhibition{service, desktopEntry, reason});
+    m_inhibits.insert(cookie, Inhibition{service, desktopEntry, reason, screenShare});
     qInfo("glassosd: notifications inhibited by %s (%s)",
           qUtf8Printable(desktopEntry.isEmpty() ? service : desktopEntry),
           qUtf8Printable(reason));
@@ -587,10 +595,34 @@ void NotificationServer::unInhibit(uint cookie)
     refreshInhibited();
 }
 
+bool NotificationServer::inhibited() const
+{
+    for (const Inhibition &i : m_inhibits) {
+        if (!(i.screenShare && m_sharePrivate)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void NotificationServer::setSharePrivate(bool on)
+{
+    if (m_sharePrivate == on) {
+        return;
+    }
+    m_sharePrivate = on;
+    refreshInhibited();
+}
+
 void NotificationServer::refreshInhibited()
 {
     if (m_model) {
         m_model->setInhibited(inhibited());
+        bool sharing = false;
+        for (const Inhibition &i : std::as_const(m_inhibits)) {
+            sharing = sharing || (i.screenShare && m_sharePrivate);
+        }
+        m_model->setScreenSharing(sharing);
     }
     /* The property is declared EmitsChangedSignal, so anything watching for
        quiet — a status widget, another daemon — hears about it without

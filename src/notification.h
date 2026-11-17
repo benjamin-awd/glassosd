@@ -8,6 +8,8 @@
 */
 #pragma once
 
+#include <optional>
+
 #include <QByteArray>
 #include <QDBusArgument>
 #include <QDateTime>
@@ -138,10 +140,27 @@ struct Notification {
     enum class LockPrivacy {
         Unset,       // sender said nothing; the configured default decides
         Show,        // readable even on the lock screen
+        HideBody,    // the summary stays (who wrote); the body is withheld
         HideContent, // shown, but the summary and body are withheld
         Hide,        // not shown at all while locked
     };
     LockPrivacy lockPrivacy = LockPrivacy::Unset;
+    /* Under HideBody, the part of the body a rule's lockscreen_keep chose to
+       leave readable — the sender's name in a group chat's "Name: text".
+       Extracted once, as plain text, when the rule is applied. */
+    QString lockKeep;
+
+    /* "show", "hide-body", "hide-content", "hide"; nullopt for anything else,
+       so each caller picks its own safe fallback. */
+    static std::optional<LockPrivacy> parseLockPrivacy(const QString &raw)
+    {
+        const QString v = raw.trimmed().toLower();
+        if (v == QLatin1String("show")) return LockPrivacy::Show;
+        if (v == QLatin1String("hide-body")) return LockPrivacy::HideBody;
+        if (v == QLatin1String("hide-content")) return LockPrivacy::HideContent;
+        if (v == QLatin1String("hide")) return LockPrivacy::Hide;
+        return std::nullopt;
+    }
 
     /* Closed, but still on screen while it animates away. Nothing but the
        view should see one of these — indexOfDisplayed() hides them, so every

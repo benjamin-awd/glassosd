@@ -62,6 +62,11 @@ struct Rule {
        the last one times out, which is the same spam wearing a different
        shape. -1 leaves it off. */
     int repeatWindowSec = -1;
+    /* lockscreen=: overrides the sender's own privacy hint and the default,
+       since a rule is the user speaking. lockscreen_keep= is a regex whose
+       first capture group (or whole match) stays readable under hide-body. */
+    std::optional<Notification::LockPrivacy> lockPrivacy;
+    std::optional<QRegularExpression> lockKeep;
 
     bool matches(const Notification &n) const;
 };

@@ -368,17 +368,20 @@ int main(int argc, char *argv[])
        shown or not to be readable while the session is locked; this is the
        blanket answer for the overwhelming majority that ask nothing. */
     const auto lockPolicy = [](const QString &raw) {
-        const QString v = raw.trimmed().toLower();
-        if (v == QLatin1String("hide")) {
-            return Notification::LockPrivacy::Hide;
-        }
-        if (v == QLatin1String("show")) {
-            return Notification::LockPrivacy::Show;
-        }
-        /* Unset, "hide-content", or a value nobody recognises. Failing towards
-           withholding the text is the safe direction for a privacy setting. */
-        return Notification::LockPrivacy::HideContent;
+        /* Unset, or a value nobody recognises, falls to hide-content. Failing
+           towards withholding the text is the safe direction for a privacy
+           setting. */
+        return Notification::parseLockPrivacy(raw).value_or(Notification::LockPrivacy::HideContent);
     };
+    /* A screen share is private (content withheld, as on the lock screen)
+       unless asked to be quiet, which is the old all-popups-suppressed
+       behaviour. */
+    const auto sharePrivate = [](const KSharedConfig::Ptr &c) {
+        return KConfigGroup(c, QStringLiteral("Notifications"))
+                   .readEntry("ScreenSharing", QStringLiteral("private"))
+                   .trimmed().toLower() != QLatin1String("quiet");
+    };
+    server->setSharePrivate(sharePrivate(cfg));
     notifications->setLockPrivacyDefault(
         lockPolicy(KConfigGroup(cfg, QStringLiteral("Notifications"))
                        .readEntry("LockscreenPrivacy", QString())));
@@ -484,6 +487,7 @@ int main(int argc, char *argv[])
                          notifications->setLockPrivacyDefault(
                              lockPolicy(KConfigGroup(cfg, QStringLiteral("Notifications"))
                                             .readEntry("LockscreenPrivacy", QString())));
+                         server->setSharePrivate(sharePrivate(cfg));
                      });
     const bool notificationsWanted = modules->notifications() && notifyCfg.readEntry("Enabled", true);
     const bool serving = notificationsWanted && server->start();

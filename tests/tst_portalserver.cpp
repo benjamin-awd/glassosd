@@ -22,7 +22,10 @@
 #include "portalserver.h"
 #include "testenv.h"
 
+#include <KConfigGroup>
+#include <KSharedConfig>
 #include <QDBusUnixFileDescriptor>
+#include <QTemporaryDir>
 #include <QFile>
 #include <QSignalSpy>
 #include <QStandardPaths>
@@ -376,6 +379,62 @@ private Q_SLOTS:
         QCOMPARE(f.rows(), 1);
         QCOMPARE(f.role(0, NotificationModel::SummaryRole).toString(),
                  QStringLiteral("Notification hidden"));
+    }
+
+    /* lockscreen=hide-body keeps the summary (who wrote) and withholds the
+       body; lockscreen_keep leaves the group-chat sender readable. */
+    void hideBodyKeepsTheSummaryAndTheKeptSender()
+    {
+        QTemporaryDir dir;
+        auto cfg = KSharedConfig::openConfig(dir.filePath(QStringLiteral("rc")), KConfig::SimpleConfig);
+        KConfigGroup all(cfg, QStringLiteral("Rule 20-chat"));
+        all.writeEntry("desktop_entry", "org.example.Chat");
+        all.writeEntry("lockscreen", "hide-body");
+        KConfigGroup group(cfg, QStringLiteral("Rule 21-chat-group"));
+        group.writeEntry("desktop_entry", "org.example.Chat");
+        group.writeEntry("summary", "New message in *");
+        group.writeEntry("lockscreen_keep", "^([^:\\n]{1,60}):");
+
+        Fixture f;
+        f.server.loadRules(cfg);
+        f.add(QStringLiteral("org.example.Chat"), QStringLiteral("dm"),
+              {{QStringLiteral("title"), v(QStringLiteral("New message from Jane Doe"))},
+               {QStringLiteral("body"), v(QStringLiteral("FYI: the code is 1234"))}});
+        f.add(QStringLiteral("org.example.Chat"), QStringLiteral("grp"),
+              {{QStringLiteral("title"), v(QStringLiteral("New message in Jane, John"))},
+               {QStringLiteral("body"), v(QStringLiteral("John Roe: the code is 5678"))}});
+        f.model.setScreenLocked(true);
+        QCOMPARE(f.rows(), 2);
+        QCOMPARE(f.role(0, NotificationModel::SummaryRole).toString(),
+                 QStringLiteral("New message from Jane Doe"));
+        QCOMPARE(f.role(0, NotificationModel::BodyRole).toString(), QStringLiteral("Message hidden"));
+        QCOMPARE(f.role(1, NotificationModel::SummaryRole).toString(),
+                 QStringLiteral("New message in Jane, John"));
+        QCOMPARE(f.role(1, NotificationModel::BodyRole).toString(),
+                 QStringLiteral("John Roe: message hidden"));
+
+        f.model.setScreenLocked(false);
+        QCOMPARE(f.role(1, NotificationModel::BodyRole).toString(),
+                 QStringLiteral("John Roe: the code is 5678"));
+    }
+
+    /* A screen share withholds content the way the lock screen does, but the
+       user is at the machine, so the card stays actionable. */
+    void screenSharingWithholdsContentButKeepsActions()
+    {
+        Fixture f;
+        f.add(QStringLiteral("org.example.Chat"), QStringLiteral("a"),
+              {{QStringLiteral("title"), v(QStringLiteral("Jane Doe"))},
+               {QStringLiteral("body"), v(QStringLiteral("See you at 7"))},
+               {QStringLiteral("default-action"), v(QStringLiteral("open"))}});
+        f.model.setScreenSharing(true);
+        QCOMPARE(f.role(0, NotificationModel::SummaryRole).toString(),
+                 QStringLiteral("Notification hidden"));
+        QVERIFY(f.role(0, NotificationModel::BodyRole).toString().isEmpty());
+        QCOMPARE(f.role(0, NotificationModel::HasDefaultActionRole).toBool(), true);
+
+        f.model.setScreenSharing(false);
+        QCOMPARE(f.role(0, NotificationModel::BodyRole).toString(), QStringLiteral("See you at 7"));
     }
 
     /* Saying nothing gets the macOS default: the card, not the words. */
