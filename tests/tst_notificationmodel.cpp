@@ -13,17 +13,35 @@
     count against a stale snapshot left "+2 more" on screen while four were
     waiting. Neither crashed; both were only findable by watching.
 
-    A few tests here wait on real time, because expiry is real time and the
-    tick is 250ms. They are the slow ones and they are worth it: the immortal
-    card is the single worst bug this project has had.
+    Expiry is tested on a fake clock (FakeClock below): the test steps time by
+    hand and runs the expiry check itself, so a dwell is checked to the
+    millisecond and nothing sleeps. These used to wait on the real 250ms tick,
+    which made them the slowest tests here (~6s of an 8s run) and only as exact
+    as their safety margins. The immortal card is still the single worst bug
+    this project has had; it is now pinned at exactly 2000ms, not "within 1.5s".
+    Exit animations still use the model's real timer, set to 1ms.
 */
 #include "notificationmodel.h"
 #include "testenv.h"
 
 #include <QSignalSpy>
+#include <QTimeZone>
 
 namespace
 {
+/* A clock the test moves by hand. Starts at an arbitrary fixed instant so
+   nothing depends on when the suite runs. */
+struct FakeClock {
+    QDateTime t = QDateTime(QDate(2026, 1, 1), QTime(12, 0), QTimeZone::UTC);
+    void install(NotificationModel &m) { m.setClockForTesting([this] { return t; }); }
+    /* Advance, then let the model notice, as its tick would have. */
+    void advance(NotificationModel &m, int ms)
+    {
+        t = t.addMSecs(ms);
+        m.expireForTesting();
+    }
+};
+
 Notification note(const QString &app, const QString &summary = {},
                   const QString &body = {}, uint id = 0)
 {
@@ -47,6 +65,17 @@ private:
     {
         m.setCoalesce(0, 0);
         m.setTimeouts(0, 0, 0);
+    }
+
+    /* True while any card is still playing its exit. */
+    static bool anyClosing(const NotificationModel &m)
+    {
+        for (int r = 0; r < m.rowCount(); ++r) {
+            if (m.index(r).data(NotificationModel::ClosingRole).toBool()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     static QString summaryAt(const NotificationModel &m, int row)
@@ -234,6 +263,8 @@ private Q_SLOTS:
     void identicalTagRepeatDoesNotRestartTheDwell()
     {
         NotificationModel m;
+        FakeClock clock;
+        clock.install(m);
         m.setCoalesce(0, 0);
         m.setTimeouts(2000, 2000, 2000);
 
@@ -244,17 +275,17 @@ private Q_SLOTS:
         m.insert(n);
         QCOMPARE(m.rowCount(), 1);
 
-        QTest::qWait(1200);
+        clock.advance(m, 1200);
         n.id = 2;
         m.insert(n);                 // byte-identical, 1200ms in
         QCOMPARE(m.rowCount(), 1);
 
-        /* It must die on the original clock: ~800ms from here plus a tick.
-           With the clock reset it would live another full two seconds. The
-           gap between those is wide on purpose — this runs on build machines
-           under load, and a test that fails when the box is busy teaches
-           people to ignore it. */
-        QTRY_VERIFY_WITH_TIMEOUT(m.rowCount() == 0, 1500);
+        /* It must die on the original clock, at 2000ms. With the clock reset
+           it would live until 3200ms. */
+        clock.advance(m, 799);
+        QCOMPARE(m.rowCount(), 1);
+        clock.advance(m, 1);
+        QCOMPARE(m.rowCount(), 0);
     }
 
     /* The other half of the same rule: 12% -> 9% is new information and does
@@ -262,6 +293,8 @@ private Q_SLOTS:
     void changedTagContentDoesRestartTheDwell()
     {
         NotificationModel m;
+        FakeClock clock;
+        clock.install(m);
         m.setCoalesce(0, 0);
         m.setTimeouts(2000, 2000, 2000);
 
@@ -271,13 +304,15 @@ private Q_SLOTS:
         n.stackTag = QStringLiteral("battery");
         m.insert(n);
 
-        QTest::qWait(1200);
+        clock.advance(m, 1200);
         n.id = 2;
         n.body = QStringLiteral("6% Remaining");
         m.insert(n);
 
-        QTest::qWait(1000);          // 2200ms after the first, 1000 after the second
+        clock.advance(m, 1000);      // 2200ms after the first, 1000 after the second
         QCOMPARE(m.rowCount(), 1);
+        clock.advance(m, 1000);      // a full dwell after the replacement
+        QCOMPARE(m.rowCount(), 0);
     }
 
     /* set_stack_tag alone is not enough for a sender that repeats forever:
@@ -374,7 +409,7 @@ private Q_SLOTS:
         NotificationModel m;
         m.setTimeouts(0, 0, 0);
         m.setCoalesce(3, 20000);
-        m.setExitMs(300);
+        m.setExitMs(1);
 
         m.insert(note(QStringLiteral("Discord"), QStringLiteral("msg 1"), {}, 1));
         m.insert(note(QStringLiteral("Signal"), QStringLiteral("other"), {}, 2));
@@ -572,6 +607,8 @@ private Q_SLOTS:
     void criticalDoesNotExpireOnItsOwn()
     {
         NotificationModel m;
+        FakeClock clock;
+        clock.install(m);
         m.setCoalesce(0, 0);
         m.setTimeouts(200, 200, 0);
 
@@ -582,8 +619,11 @@ private Q_SLOTS:
         Notification ordinary = note(QStringLiteral("App"), QStringLiteral("hello"), {}, 2);
         m.insert(ordinary);
 
-        QTRY_COMPARE_WITH_TIMEOUT(m.rowCount(), 1, 1500);
+        clock.advance(m, 200);
+        QCOMPARE(m.rowCount(), 1);
         QCOMPARE(summaryAt(m, 0), QStringLiteral("disk full"));
+        clock.advance(m, 24 * 60 * 60 * 1000);   // still there a day later
+        QCOMPARE(m.rowCount(), 1);
     }
 
     /* An app that sent its own expire_timeout still wins, including over the
@@ -591,6 +631,8 @@ private Q_SLOTS:
     void senderTimeoutBeatsTheDefault()
     {
         NotificationModel m;
+        FakeClock clock;
+        clock.install(m);
         m.setCoalesce(0, 0);
         m.setTimeouts(0, 0, 0);
 
@@ -599,7 +641,10 @@ private Q_SLOTS:
         n.timeoutMs = 200;
         m.insert(n);
 
-        QTRY_COMPARE_WITH_TIMEOUT(m.rowCount(), 0, 1500);
+        clock.advance(m, 199);
+        QCOMPARE(m.rowCount(), 1);
+        clock.advance(m, 1);
+        QCOMPARE(m.rowCount(), 0);
     }
 
     /* Hovering pauses the dwell timer: a notification should not expire out
@@ -607,17 +652,23 @@ private Q_SLOTS:
     void hoveringHoldsANotificationOpen()
     {
         NotificationModel m;
+        FakeClock clock;
+        clock.install(m);
         m.setCoalesce(0, 0);
         m.setTimeouts(300, 300, 300);
 
         m.insert(note(QStringLiteral("App"), QStringLiteral("read me"), {}, 1));
         m.setHovered(1, true);
 
-        QTest::qWait(700);
+        clock.advance(m, 700);       // well past its dwell, but being read
         QCOMPARE(m.rowCount(), 1);
 
+        /* Leaving restarts the dwell from now: a full 300ms more, not 0. */
         m.setHovered(1, false);
-        QTRY_COMPARE_WITH_TIMEOUT(m.rowCount(), 0, 1500);
+        clock.advance(m, 299);
+        QCOMPARE(m.rowCount(), 1);
+        clock.advance(m, 1);
+        QCOMPARE(m.rowCount(), 0);
     }
 
     /* Turning the setting off must not make every hovered popup vanish at
@@ -625,15 +676,25 @@ private Q_SLOTS:
     void disablingHoverPauseRestartsRatherThanExpires()
     {
         NotificationModel m;
+        FakeClock clock;
+        clock.install(m);
         m.setCoalesce(0, 0);
         m.setTimeouts(400, 400, 400);
 
         m.insert(note(QStringLiteral("App"), QStringLiteral("read me"), {}, 1));
         m.setHovered(1, true);
-        QTest::qWait(700);
+        clock.advance(m, 700);
 
+        /* Not swept away by the next tick after the flag flips (the old
+           version of this test never ran one, so it could not have failed),
+           and still gone a full dwell later. */
         m.setHoverPause(false);
-        QCOMPARE(m.rowCount(), 1);   // not swept away the instant the flag flips
+        clock.advance(m, 0);
+        QCOMPARE(m.rowCount(), 1);
+        clock.advance(m, 399);
+        QCOMPARE(m.rowCount(), 1);
+        clock.advance(m, 1);
+        QCOMPARE(m.rowCount(), 0);
     }
 
     void dismissAllClearsScreenAndQueue()
@@ -725,7 +786,7 @@ private Q_SLOTS:
     {
         NotificationModel m;
         plain(m);
-        m.setExitMs(300);
+        m.setExitMs(1);
         m.insert(note(QStringLiteral("App"), QStringLiteral("bye"), {}, 1));
 
         m.closeId(1, CloseReason::Dismissed);
@@ -747,7 +808,7 @@ private Q_SLOTS:
     {
         NotificationModel m;
         plain(m);
-        m.setExitMs(50);
+        m.setExitMs(1);
         m.setLimit(4);
         m.setIndicateHidden(true);
 
@@ -759,12 +820,12 @@ private Q_SLOTS:
         m.insert(note(QStringLiteral("App6"), QStringLiteral("n6"), {}, 6));
 
         /* Let the fade finish, then clear the screen the way a user would. */
-        QTest::qWait(150);
+        QTRY_VERIFY_WITH_TIMEOUT(!anyClosing(m), 1000);
         for (int round = 0; round < 10 && m.rowCount() > 0; ++round) {
             for (int r = 0; r < m.rowCount(); ++r) {
                 m.closeId(m.index(r).data(NotificationModel::IdRole).toUInt(), CloseReason::Dismissed);
             }
-            QTest::qWait(100);
+            QTRY_VERIFY_WITH_TIMEOUT(!anyClosing(m), 1000);
         }
 
         /* Nothing left drawn, nothing left queued. */

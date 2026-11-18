@@ -22,6 +22,8 @@
 #include <QQuickWindow>
 #include <QTimer>
 
+#include <functional>
+
 class NotificationModel : public QAbstractListModel
 {
     Q_OBJECT
@@ -127,6 +129,13 @@ public:
     int exitMs() const { return m_exitMs; }
     void setExitMs(int ms) { m_exitMs = qBound(0, ms, 2000); }
 
+    /* Test seams. Every dwell, hover and coalescing decision reads the time
+       through now(), so a test can replace the clock and step it by hand,
+       then run the expiry check itself instead of sleeping through the 250ms
+       tick. The daemon never calls these; the default clock is the wall clock. */
+    void setClockForTesting(std::function<QDateTime()> clock) { m_clock = std::move(clock); }
+    void expireForTesting() { expireTick(); }
+
     /* Put this one away and let it come back later. The notification itself
        is handed out rather than kept: persistence belongs to SnoozeStore, and
        a woken notification comes back through insert() like any other so it
@@ -199,6 +208,7 @@ private:
     uint m_imageRev = 0;
     void expireTick();
     void finishClose(uint id);
+    QDateTime now() const { return m_clock(); }
     int indexOfDisplayed(uint id) const;
 
     /* Precedence, in dunst's order: an explicit replaces_id wins, then a stack
@@ -251,6 +261,7 @@ private:
        "6% remaining" are different content and each gets its own popup. */
     QHash<QString, QDateTime> m_lastShownByContent;
     QTimer m_tick;
+    std::function<QDateTime()> m_clock = [] { return QDateTime::currentDateTimeUtc(); };
     QSet<uint> m_hovered;
     bool m_hoverPause = true;
 };

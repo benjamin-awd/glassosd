@@ -60,9 +60,9 @@ NotificationModel::NotificationModel(QObject *parent)
         qWarning("glassosd: resumed from idle - restarting dwell timers");
         /* Restart every visible notification's dwell from the moment the user
            came back, so nothing vanishes before it has been seen. */
-        const QDateTime now = QDateTime::currentDateTimeUtc();
+        const QDateTime stamp = now();
         for (Notification &n : m_displayed) {
-            n.displayedAt = now;
+            n.displayedAt = stamp;
         }
     });
 }
@@ -166,7 +166,7 @@ QVariant NotificationModel::data(const QModelIndex &index, int role) const
                                       ? QStringLiteral("Send") : n.replySubmitText;
     case WhenRole: {
         /* Apple-style relative time: "now" while fresh, then minutes. */
-        const qint64 secs = n.received.secsTo(QDateTime::currentDateTimeUtc());
+        const qint64 secs = n.received.secsTo(now());
         if (secs < 60) {
             return QStringLiteral("now");
         }
@@ -273,7 +273,7 @@ bool NotificationModel::replaceById(const Notification &n)
     if (row >= 0) {
         Notification updated = n;
         updated.groupCount = m_displayed.at(row).groupCount;
-        updated.displayedAt = QDateTime::currentDateTimeUtc();  // restart the dwell
+        updated.displayedAt = now();  // restart the dwell
         if (updated.appIcon.isEmpty() && !updated.image.isValid()) {
             updated.appIcon = m_displayed.at(row).appIcon;
         }
@@ -328,7 +328,7 @@ bool NotificationModel::replaceByTag(const Notification &n)
                                   && old.body    == n.body;
             updated.displayedAt = (sameContent && old.displayedAt.isValid())
                                       ? old.displayedAt
-                                      : QDateTime::currentDateTimeUtc();
+                                      : now();
             if (updated.appIcon.isEmpty() && !updated.image.isValid()) {
                 updated.appIcon = old.appIcon;   // inherit rather than go blank
             }
@@ -365,13 +365,13 @@ bool NotificationModel::coalesce(const Notification &n)
     }
 
     const QString key = n.groupKey();
-    const QDateTime now = QDateTime::currentDateTimeUtc();
+    const QDateTime stamp = now();
 
     QList<QDateTime> &times = m_recentByGroup[key];
     times.removeIf([&](const QDateTime &t) {
-        return t.msecsTo(now) > m_coalesceWindowMs;
+        return t.msecsTo(stamp) > m_coalesceWindowMs;
     });
-    times.append(now);
+    times.append(stamp);
 
     if (times.size() < m_coalesceThreshold) {
         return false;
@@ -415,7 +415,7 @@ bool NotificationModel::coalesce(const Notification &n)
     if (!onScreen.isEmpty()) {
         const uint newest = onScreen.takeLast();
         const int row = indexOfDisplayed(newest);
-        merged.displayedAt = QDateTime::currentDateTimeUtc();
+        merged.displayedAt = now();
         m_hovered.remove(newest);
         m_displayed[row] = merged;
         Q_EMIT dataChanged(index(row), index(row));
@@ -434,7 +434,7 @@ bool NotificationModel::coalesce(const Notification &n)
 
 uint NotificationModel::insert(Notification n)
 {
-    n.received = QDateTime::currentDateTimeUtc();
+    n.received = now();
     n.imageRev = ++m_imageRev;
     if (n.timeoutMs < 0) {
         n.timeoutMs = defaultTimeoutFor(n.urgency);
@@ -611,11 +611,11 @@ void NotificationModel::setHoverPause(bool on)
         /* Anything currently held by the pointer resumes counting from now,
            not from whenever it appeared — otherwise turning the setting off
            makes every hovered popup vanish at once. */
-        const QDateTime now = QDateTime::currentDateTimeUtc();
+        const QDateTime stamp = now();
         for (uint id : std::as_const(m_hovered)) {
             const int row = indexOfDisplayed(id);
             if (row >= 0) {
-                m_displayed[row].displayedAt = now;
+                m_displayed[row].displayedAt = stamp;
             }
         }
         m_hovered.clear();
@@ -639,7 +639,7 @@ void NotificationModel::setHovered(uint id, bool hovered)
         if (m_hovered.remove(id)) {
             const int row = indexOfDisplayed(id);
             if (row >= 0) {
-                m_displayed[row].displayedAt = QDateTime::currentDateTimeUtc();
+                m_displayed[row].displayedAt = now();
             }
         }
     }
@@ -763,7 +763,7 @@ void NotificationModel::update()
         if (n.closing) {
             continue;   // never shown again; see below
         }
-        n.displayedAt = QDateTime::currentDateTimeUtc();
+        n.displayedAt = now();
         beginInsertRows({}, m_displayed.size(), m_displayed.size());
         m_displayed.append(n);
         endInsertRows();
@@ -827,7 +827,7 @@ void NotificationModel::expireTick()
        every app that ever sent a notification left a key behind for the life
        of the session. */
     if (m_coalesceWindowMs > 0) {
-        const QDateTime cutoff = QDateTime::currentDateTimeUtc();
+        const QDateTime cutoff = now();
         for (auto it = m_recentByGroup.begin(); it != m_recentByGroup.end();) {
             it.value().removeIf([&](const QDateTime &t) {
                 return t.msecsTo(cutoff) > m_coalesceWindowMs;
@@ -849,7 +849,7 @@ void NotificationModel::expireTick()
         return;
     }
 
-    const QDateTime now = QDateTime::currentDateTimeUtc();
+    const QDateTime stamp = now();
     QList<uint> expired;
     for (const Notification &n : std::as_const(m_displayed)) {
         if (n.timeoutMs <= 0 || !n.displayedAt.isValid()) {
@@ -858,7 +858,7 @@ void NotificationModel::expireTick()
         if (m_hovered.contains(n.id)) {
             continue;   // being read
         }
-        if (n.displayedAt.msecsTo(now) >= n.timeoutMs) {
+        if (n.displayedAt.msecsTo(stamp) >= n.timeoutMs) {
             expired << n.id;
         }
     }
@@ -995,9 +995,9 @@ void NotificationModel::setScreenLocked(bool locked)
     } else {
         /* Expiry was held while locked (see the tick). Whatever is still up
            gets its full dwell from now, when someone can finally read it. */
-        const QDateTime now = QDateTime::currentDateTimeUtc();
+        const QDateTime stamp = now();
         for (Notification &n : m_displayed) {
-            n.displayedAt = now;
+            n.displayedAt = stamp;
         }
     }
 
