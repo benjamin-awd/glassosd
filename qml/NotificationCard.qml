@@ -103,8 +103,20 @@ Item {
     }
     /* Revealed once the window has put a frame on screen (see
        NotificationStack's `exposed`), so the blur is there before the card
-       is. A card arriving in a window that is already up starts at once. */
+       is. A card arriving in a window that is already up starts at once.
+
+       Always one event-loop turn late, never inline: a Behavior does not
+       animate until its object is finalized, which is after onCompleted, and
+       both triggers below can fire before that. windowReady flips while the
+       card is being attached to an already-exposed window, inside creation.
+       Called inline, reveal jumped straight to 1, so every card arriving
+       while another was on screen popped in at full size (3 frames instead
+       of ~24 in a QSG_RENDER_TIMING capture). Only the first card of a stack
+       animated, because its window was not exposed yet. */
     function startReveal() {
+        Qt.callLater(root.revealNow)
+    }
+    function revealNow() {
         if (reveal === 0.0 && !leaving)
             reveal = 1.0
     }
