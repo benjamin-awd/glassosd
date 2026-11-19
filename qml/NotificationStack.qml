@@ -282,7 +282,28 @@ Window {
             /* Live cards, not rows: a card fading out still has a row. Counted
                by rows, the pill outlived the cards it had just cleared by a
                quarter of a second, then jumped as they were removed. */
-            readonly property bool shown: waiting || NotificationModel.liveCount >= 3
+            readonly property bool wanted: waiting || NotificationModel.liveCount >= 3
+            /* Shown once there has been a pile for a moment, not the instant
+               there is one. A card arriving just as another expires makes
+               three live cards for a frame or two; shown at once, the pill
+               flashed up under the stack for ~100 ms and vanished again
+               (per-panel region capture: a 32px region present for 12 frames
+               at 120 Hz). Hidden at once: a pill that outlives a click on it
+               is worse. */
+            property bool shown: false
+            onWantedChanged: {
+                if (wanted) {
+                    showDelay.restart()
+                } else {
+                    showDelay.stop()
+                    shown = false
+                }
+            }
+            Timer {
+                id: showDelay
+                interval: Style.animIn
+                onTriggered: storm.shown = storm.wanted
+            }
             /* Keeps the pill's place in the column, invisible, while the
                cards above it finish leaving. Collapsing it at once would drop
                every fading card by the pill's height mid-animation. */

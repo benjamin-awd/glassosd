@@ -252,6 +252,47 @@ private Q_SLOTS:
                                 .arg(worst).arg(cardH)));
     }
 
+    /* A card arriving at the top while the bottom one leaves: the card in
+       between is pushed down by the arrival with nothing above it leaving,
+       and must glide down rather than jump. */
+    void arrivalDuringAnExitDoesNotJump()
+    {
+        setTheme({{QStringLiteral("motion.in"), 400}, {QStringLiteral("motion.out"), 250},
+                  {QStringLiteral("motion.slideTravel"), 362},
+                  {QStringLiteral("motion.curveIn"), QStringLiteral("0.35,0.85,0.35,1")},
+                  {QStringLiteral("motion.curveOut"), QStringLiteral("0.15,0.05,0.30,1")}});
+        m_model->insert(note(QStringLiteral("leaving")));
+        m_model->insert(note(QStringLiteral("staying")));
+        QTRY_COMPARE(cards().size(), 2);
+        waitSettled();
+        QQuickItem *staying = cards().constFirst();      // newest, at the top
+        const qreal cardH = staying->height();
+        QList<qreal> ys;
+        QPointer<QQuickItem> watched(staying);
+        auto conn = connect(m_win, &QQuickWindow::beforeSynchronizing, this, [&] {
+            if (watched && watched->window()) {
+                ys << drawn(watched).y();
+            }
+        }, Qt::DirectConnection);
+        m_model->dismiss(m_model->index(1).data(NotificationModel::IdRole).toUInt());
+        QTest::qWait(20);
+        m_model->insert(note(QStringLiteral("arriving")));
+        QTest::qWait(700);
+        disconnect(conn);
+        QVERIFY(ys.size() > 5);
+        qreal worst = 0;
+        QStringList trace;
+        for (int i = 1; i < ys.size(); ++i) {
+            worst = qMax(worst, qAbs(ys.at(i) - ys.at(i - 1)));
+            trace << QString::number(ys.at(i), 'f', 0);
+        }
+        QVERIFY2(worst < cardH * 0.3,
+                 qPrintable(QStringLiteral("the card jumped %1px in one frame: %2")
+                                .arg(worst).arg(trace.join(u' '))));
+        /* And it went down, by a card and a gap, not up. */
+        QVERIFY(ys.last() > ys.first() + cardH * 0.9);
+    }
+
     /* "Clear all" appears with the third live card and is gone with them:
        it was counted by rows, so it outlived cards still fading out. */
     void clearAllFollowsLiveCards()
@@ -274,9 +315,43 @@ private Q_SLOTS:
         };
         pill = find(m_win->contentItem());
         QVERIFY(pill);
-        QVERIFY(pill->property("shown").toBool());
+        QTRY_VERIFY_WITH_TIMEOUT(pill->property("shown").toBool(), 3000);
         m_model->dismissAll();
         QCOMPARE(pill->property("shown").toBool(), false);
+    }
+
+    /* Three live cards for an instant, as when one arrives just as another
+       expires, is not a pile. Shown at once, the pill flashed up under the
+       stack for ~100 ms and vanished (live capture, per-panel regions). */
+    void clearAllDoesNotFlashForAMomentaryThirdCard()
+    {
+        m_model->insert(note(QStringLiteral("a")));
+        m_model->insert(note(QStringLiteral("b")));
+        waitSettled();
+        QObject *pill = nullptr;
+        std::function<QObject *(QQuickItem *)> find = [&](QQuickItem *it) -> QObject * {
+            for (QQuickItem *c : it->childItems()) {
+                if (c->metaObject()->indexOfProperty("held") >= 0 && c->metaObject()->indexOfProperty("waiting") >= 0) {
+                    return c;
+                }
+                if (QObject *o = find(c)) {
+                    return o;
+                }
+            }
+            return nullptr;
+        };
+        pill = find(m_win->contentItem());
+        QVERIFY(pill);
+        bool everShown = false;
+        auto conn = connect(m_win, &QQuickWindow::afterAnimating, this, [&] {
+            everShown = everShown || pill->property("shown").toBool();
+        });
+        m_model->insert(note(QStringLiteral("c")));
+        QTest::qWait(50);
+        m_model->dismiss(m_model->index(m_model->rowCount() - 1).data(NotificationModel::IdRole).toUInt());
+        QTest::qWait(500);
+        disconnect(conn);
+        QVERIFY2(!everShown, "Clear all flashed up for a momentary third card");
     }
 
     /* e099271: a settings change re-sends the position. With a sliding theme
