@@ -48,6 +48,14 @@ void LockWatcher::attach()
                     this, SLOT(onActiveChanged(bool)));
     }
     m_available = true;
+    /* Locked until the service says otherwise. The answer is asynchronous,
+       and the popups are already allowed on the lock screen, so starting
+       unlocked meant a daemon restarted while the session was locked (a
+       systemd restart after a crash, say) showed the full text and live
+       actions of anything that arrived before the reply. Assuming locked
+       costs at most a card that shows hidden for a moment and then reveals
+       itself, without the sender resending. */
+    setLocked(true);
     refresh();
 }
 
@@ -70,9 +78,10 @@ void LockWatcher::refresh()
             [this](QDBusPendingCallWatcher *w) {
                 const QDBusPendingReply<bool> reply = *w;
                 w->deleteLater();
-                if (!reply.isError()) {
-                    setLocked(reply.value());
-                }
+                /* No answer means no way to tell, and an unlocked session
+                   is the one that has to keep working; the same reasoning
+                   as detach(). ActiveChanged still corrects it. */
+                setLocked(!reply.isError() && reply.value());
             });
 }
 

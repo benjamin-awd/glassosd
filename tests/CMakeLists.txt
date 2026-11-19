@@ -69,6 +69,9 @@ glassosd_test(tst_theme
     SOURCES theme.cpp
     LIBS Qt6::Qml KF6::ConfigCore)
 
+glassosd_test(tst_lockwatcher
+    SOURCES lockwatcher.cpp)
+
 glassosd_test(tst_mpriscontroller
     SOURCES mpriscontroller.cpp
     LIBS Qt6::Qml)
@@ -91,6 +94,14 @@ if(DBUS_RUN_SESSION)
                      -- ${CMAKE_COMMAND} -E env GLASSOSD_PRIVATE_BUS=1
                      $<TARGET_FILE:tst_portalrelay>)
     set_tests_properties(tst_portalrelay_bus PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        TIMEOUT 60)
+
+    add_test(NAME tst_lockwatcher_bus
+             COMMAND ${DBUS_RUN_SESSION} --config-file=${CMAKE_CURRENT_SOURCE_DIR}/dbus-test-session.conf
+                     -- ${CMAKE_COMMAND} -E env GLASSOSD_PRIVATE_BUS=1
+                     $<TARGET_FILE:tst_lockwatcher>)
+    set_tests_properties(tst_lockwatcher_bus PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
         TIMEOUT 60)
 
