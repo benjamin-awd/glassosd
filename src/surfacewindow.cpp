@@ -13,6 +13,7 @@
 #include <QScreen>
 #include <QTimer>
 #include <QRegion>
+#include <QLoggingCategory>
 #include <QPlatformSurfaceEvent>
 
 #include <KWindowEffects>
@@ -23,6 +24,12 @@
 #include <functional>
 #include <qpa/qplatformwindow_p.h>
 #include "qwayland-kde-lockscreen-overlay-v1.h"
+
+/* Per-frame region trace ("mask for ... bounds"): one line a frame while
+   anything moves, which was most of the journal (336 of 573 lines in a
+   day). Off by default; for a frame capture, run with
+   QT_LOGGING_RULES="glassosd.regions.debug=true". */
+Q_LOGGING_CATEGORY(lcRegions, "glassosd.regions", QtInfoMsg)
 
 namespace
 {
@@ -586,7 +593,7 @@ void Surface::recompute(QQuickWindow *window)
         return;
     }
     if (m_maskedWindows.contains(window)) {
-        qDebug("glassosd: mask for %p -> %d rect(s), bounds %d,%d %dx%d (window %dx%d)",
+        qCDebug(lcRegions, "glassosd: mask for %p -> %d rect(s), bounds %d,%d %dx%d (window %dx%d)",
                (void *)window, int(combined.rectCount()),
                combined.boundingRect().x(), combined.boundingRect().y(),
                combined.boundingRect().width(), combined.boundingRect().height(),
