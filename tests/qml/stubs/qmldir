@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: 2026 glassosd contributors
+# SPDX-License-Identifier: GPL-2.0-or-later
+# The real notification QML beside test stand-ins for the C++ singletons it
+# talks to; assembled into the build tree by tests/CMakeLists.txt.
+module org.glassosd.ui
+singleton Style 1.0 Style.qml
+singleton Icons 1.0 Icons.qml
+singleton Surface 1.0 Surface.qml
+singleton Appearance 1.0 Appearance.qml
+singleton Modules 1.0 Modules.qml
+singleton HistoryModel 1.0 HistoryModel.qml
+singleton Theme 1.0 Theme.qml
+NotificationCard 1.0 NotificationCard.qml
+NotificationStack 1.0 NotificationStack.qml
+GlassPanel 1.0 GlassPanel.qml
+CardButton 1.0 CardButton.qml

@@ -86,3 +86,39 @@ if(DBUS_RUN_SESSION)
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
         TIMEOUT 60)
 endif()
+
+# ---- QML ------------------------------------------------------------------
+# The notification stack and card are tested offscreen against the real
+# NotificationModel, with the C++ singletons that need a compositor (Surface,
+# Appearance, Theme, ...) replaced by QML stand-ins from tests/qml/stubs. The
+# real QML files are copied beside the stubs into a throwaway module directory
+# in the build tree, so the test loads exactly what ships, from source.
+set(GLASSOSD_QML_TEST_MODULE ${CMAKE_CURRENT_BINARY_DIR}/qmlimports/org/glassosd/ui)
+set(GLASSOSD_QML_UNDER_TEST
+    NotificationStack.qml NotificationCard.qml GlassPanel.qml CardButton.qml
+    Style.qml Icons.qml)
+set(_qml_copy_cmds)
+foreach(f IN LISTS GLASSOSD_QML_UNDER_TEST)
+    list(APPEND _qml_copy_cmds COMMAND ${CMAKE_COMMAND} -E copy_if_different
+         ${CMAKE_SOURCE_DIR}/qml/${f} ${GLASSOSD_QML_TEST_MODULE}/${f})
+endforeach()
+file(GLOB _qml_stubs ${CMAKE_CURRENT_SOURCE_DIR}/qml/stubs/*)
+foreach(f IN LISTS _qml_stubs)
+    get_filename_component(n ${f} NAME)
+    list(APPEND _qml_copy_cmds COMMAND ${CMAKE_COMMAND} -E copy_if_different
+         ${f} ${GLASSOSD_QML_TEST_MODULE}/${n})
+endforeach()
+add_custom_target(glassosd_qml_test_module ALL
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${GLASSOSD_QML_TEST_MODULE}
+    ${_qml_copy_cmds}
+    COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
+            ${CMAKE_SOURCE_DIR}/qml/icons ${GLASSOSD_QML_TEST_MODULE}/icons
+    COMMENT "Assembling the QML test module"
+    VERBATIM)
+
+glassosd_test(tst_notificationstack
+    SOURCES notificationmodel.cpp soundplayer.cpp
+    LIBS Qt6::Qml Qt6::Quick KF6::WindowSystem KF6::IdleTime)
+add_dependencies(tst_notificationstack glassosd_qml_test_module)
+target_compile_definitions(tst_notificationstack PRIVATE
+    GLASSOSD_QML_TEST_IMPORTS="${CMAKE_CURRENT_BINARY_DIR}/qmlimports")
