@@ -59,7 +59,7 @@ The behaviour that matters once the desktop is actually busy:
 | | |
 |---|---|
 | **Rate limiting** | at most *N* on screen; the rest queue behind a "+N more" indicator |
-| **Burst coalescing** | 30 mails arriving at once become one card that says 30 |
+| **Burst coalescing** | 30 mails arriving at once become one card that says 30; "Show 29 more" opens them on the card |
 | **Replace by tag** | stack tags and `replaces_id` update a card in place |
 | **Idle threshold** | popups that appeared while you were away wait for you to come back |
 | **Hover to hold** | the dwell timer pauses while the pointer is over a card |

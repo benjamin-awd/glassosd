@@ -134,6 +134,19 @@ public:
        what the click was almost certainly for. */
     Q_INVOKABLE void activateEntry(int row);
 
+    /* The rest of a popup's group, for opening it in place on the card.
+
+       The popup model keeps only a count: coalescing closes the burst's
+       older notifications with their senders as it merges them, so their
+       contents survive only here. Newest first, the card's own entry left
+       out, at most `max` of them. Each is a map of id, summary, body,
+       iconSource, when and repeatCount, masked exactly as the centre's rows
+       are while the screen is shared. Not a live list: the card asks again
+       when changed() fires or its group grows. */
+    Q_INVOKABLE QVariantList groupMembers(const QString &key, uint excludeId, int max) const;
+    /* Clicking one of those rows: as activateEntry(), by id. */
+    Q_INVOKABLE void activateId(uint id);
+
     Q_INVOKABLE void toggleGroup(const QString &key);
     Q_INVOKABLE void clearGroup(const QString &key);
     void setAutoCollapseOver(int n) { m_autoCollapseOver = qMax(0, n); rebuild(); }
@@ -148,6 +161,11 @@ private:
     /* appName, not groupKey: the rules engine matches on appname, and the
        settings panel writes the rule under the app's name. */
     bool isCollapsed(const QString &key, const QString &appName, int count) const;
+    /* What an entry shows for summary, body or icon: masked while the
+       screen is shared, as its lock-screen preference asks. An invalid
+       QVariant means "not masked, use the real value". */
+    QVariant maskedForSharing(const Notification &n, int role) const;
+    static QString iconSourceFor(const Notification &n);
 
 public:
 

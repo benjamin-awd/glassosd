@@ -637,6 +637,78 @@ private Q_SLOTS:
         QCOMPARE(m_model->rowCount(), 1);
     }
 
+    /* "Show N more" opens the group on the card itself: its sheets fold
+       away, the earlier notifications appear as rows read from history, and
+       a row's click goes to history's activation. Nothing is dismissed and
+       the centre is not opened. */
+    void aGroupOpensInPlace()
+    {
+        m_model->setCoalesce(3, 20000);
+        for (int i = 0; i < 3; ++i) {
+            Notification n = note(QStringLiteral("chat"));
+            n.appName = QStringLiteral("Chat");
+            m_model->insert(n);
+        }
+        QTRY_COMPARE(cards().size(), 1);
+        waitSettled();
+        QQuickItem *card = cards().constFirst();
+        QCOMPARE(card->property("stackDepth").toInt(), 2);
+        QCOMPARE(card->property("shownDepth").toInt(), 2);
+
+        QObject *history = singleton("HistoryModel");
+        history->setProperty("members", QVariantList{
+            QVariantMap{{QStringLiteral("id"), 41}, {QStringLiteral("summary"), QStringLiteral("Second message")},
+                        {QStringLiteral("body"), QStringLiteral("hi again")}, {QStringLiteral("iconSource"), QString()},
+                        {QStringLiteral("when"), QStringLiteral("now")}, {QStringLiteral("repeatCount"), 1}},
+            QVariantMap{{QStringLiteral("id"), 40}, {QStringLiteral("summary"), QStringLiteral("First message")},
+                        {QStringLiteral("body"), QString()}, {QStringLiteral("iconSource"), QString()},
+                        {QStringLiteral("when"), QStringLiteral("1m ago")}, {QStringLiteral("repeatCount"), 3}},
+        });
+
+        auto findText = [&](const QString &text) -> QQuickItem * {
+            QQuickItem *found = nullptr;
+            std::function<void(QQuickItem *)> walk = [&](QQuickItem *it) {
+                for (QQuickItem *c : it->childItems()) {
+                    if (!found && c->property("text").toString() == text) {
+                        found = c;
+                    }
+                    walk(c);
+                }
+            };
+            walk(card);
+            return found;
+        };
+        auto click = [&](QQuickItem *item) {
+            const QPoint at = item->mapToScene(QPointF(item->width() / 2, item->height() / 2)).toPoint();
+            QTest::mouseMove(m_win, at);
+            QTest::mouseClick(m_win, Qt::LeftButton, Qt::NoModifier, at);
+        };
+
+        QQuickItem *pill = findText(QStringLiteral("Show 2 more"));
+        QVERIFY(pill);
+        const qreal before = card->height();
+        click(pill);
+        QTRY_VERIFY(card->property("groupShown").toBool());
+        QCOMPARE(card->property("shownDepth").toInt(), 0);
+        QCOMPARE(pill->property("text").toString(), QStringLiteral("Show less"));
+        QTRY_VERIFY(card->height() > before + 20);
+
+        QQuickItem *second = findText(QStringLiteral("Second message"));
+        QVERIFY(second && second->isVisible());
+        QVERIFY(findText(QStringLiteral("First message  ×3")));
+        QVERIFY(findText(QStringLiteral("Open in Notification Centre")));
+
+        click(second);
+        QTRY_COMPARE(history->property("lastActivated").toInt(), 41);
+        QCOMPARE(history->property("lastGroup").toString(), QString());   // the centre stayed shut
+        QCOMPARE(m_model->rowCount(), 1);
+
+        click(pill);
+        QTRY_VERIFY(!card->property("groupShown").toBool());
+        QCOMPARE(card->property("shownDepth").toInt(), 2);
+        QCOMPARE(pill->property("text").toString(), QStringLiteral("Show 2 more"));
+    }
+
     /* A short body offers nothing to expand. */
     void aShortBodyHasNoChevron()
     {

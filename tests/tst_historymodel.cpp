@@ -23,6 +23,7 @@
 #include <QFileInfo>
 #include <QRegularExpression>
 #include <QJsonArray>
+#include <QSignalSpy>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QStandardPaths>
@@ -205,6 +206,52 @@ private Q_SLOTS:
         QVERIFY(h.index(0).data(HistoryModel::IsHeaderRole).toBool());
         QCOMPARE(h.index(0).data(HistoryModel::GroupCountRole).toInt(), 3);
         QCOMPARE(h.index(1).data(HistoryModel::RepeatCountRole).toInt(), 3);
+    }
+
+    /* The rest of a popup's group, for opening it on the card: newest
+       first, the card's own entry left out, capped, other apps ignored. */
+    void groupMembersListsTheRestOfTheGroup()
+    {
+        clearStore();
+        HistoryModel h;
+        h.record(note(QStringLiteral("Chat"), QStringLiteral("one"), {}, 501));
+        h.record(note(QStringLiteral("Other"), QStringLiteral("elsewhere"), {}, 502));
+        h.record(note(QStringLiteral("Chat"), QStringLiteral("two"), QStringLiteral("b2"), 503));
+        h.record(note(QStringLiteral("Chat"), QStringLiteral("three"), {}, 504));
+        const QString key = h.index(0).data(HistoryModel::GroupKeyRole).toString();
+
+        const QVariantList all = h.groupMembers(key, 504, 10);
+        QCOMPARE(all.size(), 2);
+        QCOMPARE(all.at(0).toMap().value(QStringLiteral("summary")).toString(), QStringLiteral("two"));
+        QCOMPARE(all.at(0).toMap().value(QStringLiteral("body")).toString(), QStringLiteral("b2"));
+        QCOMPARE(all.at(0).toMap().value(QStringLiteral("id")).toUInt(), 503u);
+        QCOMPARE(all.at(1).toMap().value(QStringLiteral("summary")).toString(), QStringLiteral("one"));
+        QCOMPARE(all.at(1).toMap().value(QStringLiteral("when")).toString(), QStringLiteral("now"));
+
+        QCOMPARE(h.groupMembers(key, 504, 1).size(), 1);
+        QCOMPARE(h.groupMembers(key, 504, 0).size(), 0);
+        QCOMPARE(h.groupMembers(QString(), 504, 10).size(), 0);
+    }
+
+    /* While the screen is shared the rows are masked as the centre's are. */
+    void groupMembersAreMaskedWhileSharing()
+    {
+        clearStore();
+        HistoryModel h;
+        h.record(note(QStringLiteral("Chat"), QStringLiteral("secret"), QStringLiteral("body"), 601));
+        h.record(note(QStringLiteral("Chat"), QStringLiteral("newest"), {}, 602));
+        const QString key = h.index(0).data(HistoryModel::GroupKeyRole).toString();
+
+        QSignalSpy changed(&h, &HistoryModel::changed);
+        h.setScreenSharing(true, Notification::LockPrivacy::HideContent);
+        QVERIFY(changed.count() >= 1);   // an open group re-reads its rows
+        const QVariantMap row = h.groupMembers(key, 602, 10).value(0).toMap();
+        QCOMPARE(row.value(QStringLiteral("summary")).toString(), QStringLiteral("Notification hidden"));
+        QCOMPARE(row.value(QStringLiteral("body")).toString(), QString());
+
+        h.setScreenSharing(false, Notification::LockPrivacy::HideContent);
+        QCOMPARE(h.groupMembers(key, 602, 10).value(0).toMap().value(QStringLiteral("summary")).toString(),
+                 QStringLiteral("secret"));
     }
 
     /* A changed percentage is news, not a repeat. */

@@ -177,6 +177,7 @@ void HistoryModel::setScreenSharing(bool sharing, Notification::LockPrivacy fall
         Q_EMIT dataChanged(index(0), index(m_rows.size() - 1),
                            {SummaryRole, BodyRole, IconSourceRole});
     }
+    Q_EMIT changed();   // a group opened on a popup re-reads its masked rows
 }
 
 int HistoryModel::rowCount(const QModelIndex &parent) const
@@ -209,33 +210,8 @@ QVariant HistoryModel::data(const QModelIndex &index, int role) const
     }
 
     const Notification &n = r.entry;
-    if (m_sharing) {
-        const auto policy = n.lockPrivacy == Notification::LockPrivacy::Unset ? m_sharingFallback
-                                                                             : n.lockPrivacy;
-        const bool hideAll = policy == Notification::LockPrivacy::HideContent
-                          || policy == Notification::LockPrivacy::Hide;
-        const bool hideBody = hideAll || policy == Notification::LockPrivacy::HideBody;
-        switch (role) {
-        case SummaryRole:
-            if (hideAll) {
-                return tr("Notification hidden");
-            }
-            break;
-        case BodyRole:
-            if (hideBody) {
-                return QString();
-            }
-            break;
-        case IconSourceRole:
-            /* The picture is content (an avatar, a photo); the app's icon
-               is not. Without a picture this is the app icon anyway. */
-            if (hideBody && (n.image.isValid() || n.appIcon != n.senderIcon)) {
-                return n.senderIcon.isEmpty() ? QString() : QStringLiteral("image://icon/") + n.senderIcon;
-            }
-            break;
-        default:
-            break;
-        }
+    if (const QVariant masked = maskedForSharing(n, role); masked.isValid()) {
+        return masked;
     }
     switch (role) {
     case IdRole:      return n.id;
@@ -244,13 +220,97 @@ QVariant HistoryModel::data(const QModelIndex &index, int role) const
     case UrgencyRole: return static_cast<int>(n.urgency);
     case WhenRole:    return n.received.toLocalTime().toString(QStringLiteral("HH:mm"));
     case RepeatCountRole: return n.repeatCount;
-    case IconSourceRole:
-        if (n.image.isValid()) {
-            return QStringLiteral("image://notifyimage/h%1").arg(n.id);
-        }
-        return n.appIcon.isEmpty() ? QString() : QStringLiteral("image://icon/") + n.appIcon;
+    case IconSourceRole: return iconSourceFor(n);
     default:
         return {};
+    }
+}
+
+QString HistoryModel::iconSourceFor(const Notification &n)
+{
+    if (n.image.isValid()) {
+        return QStringLiteral("image://notifyimage/h%1").arg(n.id);
+    }
+    return n.appIcon.isEmpty() ? QString() : QStringLiteral("image://icon/") + n.appIcon;
+}
+
+QVariant HistoryModel::maskedForSharing(const Notification &n, int role) const
+{
+    if (!m_sharing) {
+        return {};
+    }
+    const auto policy = n.lockPrivacy == Notification::LockPrivacy::Unset ? m_sharingFallback
+                                                                         : n.lockPrivacy;
+    const bool hideAll = policy == Notification::LockPrivacy::HideContent
+                      || policy == Notification::LockPrivacy::Hide;
+    const bool hideBody = hideAll || policy == Notification::LockPrivacy::HideBody;
+    switch (role) {
+    case SummaryRole:
+        if (hideAll) {
+            return tr("Notification hidden");
+        }
+        break;
+    case BodyRole:
+        if (hideBody) {
+            return QString();
+        }
+        break;
+    case IconSourceRole:
+        /* The picture is content (an avatar, a photo); the app's icon
+           is not. Without a picture this is the app icon anyway. */
+        if (hideBody && (n.image.isValid() || n.appIcon != n.senderIcon)) {
+            return n.senderIcon.isEmpty() ? QString() : QStringLiteral("image://icon/") + n.senderIcon;
+        }
+        break;
+    default:
+        break;
+    }
+    return {};
+}
+
+QVariantList HistoryModel::groupMembers(const QString &key, uint excludeId, int max) const
+{
+    QVariantList out;
+    if (key.isEmpty() || max <= 0) {
+        return out;
+    }
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    for (const Notification &n : m_all) {   // newest first
+        if (n.groupKey() != key || n.id == excludeId) {
+            continue;
+        }
+        auto field = [&](int role, const QVariant &real) {
+            const QVariant masked = maskedForSharing(n, role);
+            return masked.isValid() ? masked : real;
+        };
+        /* Relative, as the card's own header reads, not the centre's HH:mm:
+           the rows sit under a card that says "now". */
+        const qint64 secs = n.received.secsTo(now);
+        const QString when = secs < 60 ? QStringLiteral("now")
+                           : secs < 3600 ? QStringLiteral("%1m ago").arg(secs / 60)
+                                         : n.received.toLocalTime().toString(QStringLiteral("HH:mm"));
+        out.append(QVariantMap{
+            {QStringLiteral("id"), n.id},
+            {QStringLiteral("summary"), field(SummaryRole, n.summary)},
+            {QStringLiteral("body"), field(BodyRole, n.body)},
+            {QStringLiteral("iconSource"), field(IconSourceRole, iconSourceFor(n))},
+            {QStringLiteral("when"), when},
+            {QStringLiteral("repeatCount"), n.repeatCount},
+        });
+        if (out.size() >= max) {
+            break;
+        }
+    }
+    return out;
+}
+
+void HistoryModel::activateId(uint id)
+{
+    for (const Notification &n : std::as_const(m_all)) {
+        if (n.id == id) {
+            Q_EMIT entryActivated(n.id, n.desktopEntry);
+            return;
+        }
     }
 }
 

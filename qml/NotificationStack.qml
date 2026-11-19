@@ -273,6 +273,7 @@ Window {
                    notifications" opened the settings panel: it was the gear's
                    behaviour, and the group stayed folded on top of that. */
                 onMoreRequested: HistoryModel.showGroup(model.groupKey, false)
+                onMemberActivated: id => HistoryModel.activateId(id)
                 onSettingsRequested: HistoryModel.showGroup(model.groupKey, true)
                 onSnoozeRequested: NotificationModel.snooze(model.notifId)
             }

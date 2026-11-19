@@ -26,7 +26,10 @@ Item {
     property var entry            // the model row
     property int stackDepth: 0    // how many edges to peek out below
 
-    readonly property bool stacked: stackDepth > 0
+    /* Sheets actually drawn: none while the group is open in place, since
+       the rows it would stand for are then on the card itself. */
+    readonly property int shownDepth: groupShown ? 0 : stackDepth
+    readonly property bool stacked: shownDepth > 0
 
     /* One layer for the whole stack: it flattens the cards so their alphas
        cannot compound, and it gives MultiEffect a silhouette to cast a single
@@ -438,6 +441,27 @@ Item {
     property bool expanded: false
     readonly property int expandedLines: 20
 
+    /* The group opened in place by "Show N more": the rest of the burst as
+       rows on this card, instead of a trip to the notification centre. The
+       popup model only counts a group's members (coalescing closes them with
+       their senders as it merges), so the rows come from history, which
+       recorded each one on arrival. Never on the lock screen: the pill is
+       withheld there, and a group left open must not keep showing what the
+       lock screen hides. */
+    property bool groupOpen: false
+    readonly property bool groupShown: groupOpen && root.entry.groupCount > 1
+                                       && !NotificationModel.screenLocked
+    /* Rows on the card before the rest are left to the centre. Past five the
+       card stops being a glance; the link under them opens the whole group. */
+    readonly property int groupRowsMax: 5
+    readonly property var groupMembers: {
+        if (!groupShown)
+            return []
+        HistoryModel.total   // re-read whenever history changes (NOTIFY changed)
+        return HistoryModel.groupMembers(root.entry.groupKey, root.entry.notifId,
+                                         Math.min(root.entry.groupCount - 1, groupRowsMax))
+    }
+
     /* The committed swipe's flight, set by endSwipe(). */
     property int throwMs: Style.animOut
     property var throwCurve: [0.333, 0.0, 0.667, 1.0, 1.0, 1.0]
@@ -446,6 +470,7 @@ Item {
     signal settingsRequested()
     signal snoozeRequested()
     signal moreRequested()
+    signal memberActivated(int id)
     signal actionTriggered(string key)
     signal replySent(string text)
     signal activated()
@@ -468,7 +493,7 @@ Item {
     }
 
     implicitHeight: card.implicitHeight
-                    + (stackDepth > 0 ? Style.stackDrop(stackDepth - 1) : 0)
+                    + (shownDepth > 0 ? Style.stackDrop(shownDepth - 1) : 0)
 
     // ---- stacked edges, drawn behind and below --------------------------
     CardStackSurface {
@@ -476,7 +501,7 @@ Item {
         anchors.fill: parent
         z: -1
         card: card
-        depth: root.stackDepth
+        depth: root.shownDepth
         pressed: cardHover.pressed
     }
 
@@ -518,7 +543,7 @@ Item {
            colour is what reads as "the first one is black and the second is
            grey", and it only shows over a bright backdrop, where a 55% black
            overlay has something to darken. */
-        shadow: root.stackDepth === 0
+        shadow: root.shownDepth === 0
         /* Every card in the stack keeps its own rounded corners. Squaring off
            the ones that meet something below closed the small wedge of
            backdrop between them, but at the price of a card with square
@@ -1002,6 +1027,121 @@ Item {
                     }
                 }
 
+                /* The open group: one row per earlier notification, newest
+                   first, under a hairline. Read-only text plus a click, since
+                   their senders were told they closed when the group merged:
+                   a click opens them as the centre does (the app, or the
+                   default action if one is somehow still live). */
+                ColumnLayout {
+                    id: groupRows
+                    Layout.fillWidth: true
+                    Layout.topMargin: 8
+                    visible: root.groupShown
+                    spacing: 0
+
+                    Repeater {
+                        model: root.groupMembers
+
+                        Item {
+                            id: memberRow
+                            required property var modelData
+                            Layout.fillWidth: true
+                            implicitHeight: memberCol.implicitHeight + 12
+
+                            Rectangle {
+                                anchors.top: parent.top
+                                width: parent.width
+                                height: 1
+                                color: Style.controlEdge
+                            }
+                            Rectangle {
+                                anchors.fill: parent
+                                anchors.topMargin: 1
+                                anchors.leftMargin: -6
+                                anchors.rightMargin: -6
+                                radius: 6
+                                color: memberArea.pressed ? Style.controlFillHover
+                                     : memberArea.containsMouse ? Style.controlFill : "transparent"
+                            }
+
+                            ColumnLayout {
+                                id: memberCol
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.verticalCenter: parent.verticalCenter
+                                anchors.verticalCenterOffset: 1
+                                spacing: 1
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 6
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: memberRow.modelData.summary
+                                              + (memberRow.modelData.repeatCount > 1
+                                                 ? "  \u00D7" + memberRow.modelData.repeatCount : "")
+                                        color: Style.foreground
+                                        font.family: Style.fontFamily
+                                        font.pointSize: Style.notifyFontSize - 1
+                                        font.weight: Font.DemiBold
+                                        elide: Text.ElideRight
+                                        maximumLineCount: 1
+                                        textFormat: Text.PlainText
+                                    }
+                                    Text {
+                                        text: memberRow.modelData.when
+                                        color: Style.notifyTime
+                                        font.family: Style.fontFamily
+                                        font.pointSize: Style.notifyTimePx > 0 ? Style.notifyTimePx * 0.75
+                                                                               : Style.notifyFontSize - 2
+                                    }
+                                }
+                                Text {
+                                    Layout.fillWidth: true
+                                    visible: text !== ""
+                                    text: memberRow.modelData.body
+                                    color: Style.notifyBody
+                                    font.family: Style.fontFamily
+                                    font.pointSize: Style.notifyFontSize - 2
+                                    wrapMode: Text.WordWrap
+                                    maximumLineCount: 2
+                                    elide: Text.ElideRight
+                                    textFormat: Text.StyledText
+                                }
+                            }
+
+                            MouseArea {
+                                id: memberArea
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                onClicked: root.memberActivated(memberRow.modelData.id)
+                            }
+                        }
+                    }
+
+                    /* The whole group, settings and all, in the centre: for
+                       the members past groupRowsMax, and for any that history
+                       no longer holds (cleared, or aged out past its cap). */
+                    Text {
+                        id: centreLink
+                        Layout.topMargin: 4
+                        readonly property int rest: root.entry.groupCount - 1 - root.groupMembers.length
+                        text: rest > 0 ? rest + " more in Notification Centre" : "Open in Notification Centre"
+                        color: centreArea.containsMouse ? Style.foreground : Style.notifyTime
+                        font.family: Style.fontFamily
+                        font.pointSize: Style.notifyFontSize - 2
+                        font.underline: centreArea.containsMouse
+
+                        MouseArea {
+                            id: centreArea
+                            anchors.fill: parent
+                            anchors.margins: -4
+                            hoverEnabled: true
+                            onClicked: root.moreRequested()
+                        }
+                    }
+                }
+
                 /* A pill, matching the queue-overflow row exactly. "More exists
                    beyond what is shown" was previously two different shapes
                    depending on which mechanism produced it. */
@@ -1024,7 +1164,8 @@ Item {
                            said the same words for something else entirely —
                            notifications waiting behind the display limit, which
                            you cannot act on — so the two are worded apart. */
-                        text: "Show " + (root.entry.groupCount - 1) + " more"
+                        text: root.groupShown ? "Show less"
+                                              : "Show " + (root.entry.groupCount - 1) + " more"
                         color: Style.foreground
                         font.family: Style.fontFamily
                         font.pointSize: Style.notifyFontSize - 2
@@ -1035,7 +1176,9 @@ Item {
                         anchors.fill: parent
                         hoverEnabled: true
                         enabled: !NotificationModel.screenLocked
-                        onClicked: root.moreRequested()
+                        /* Opens the group here; the centre is one more click,
+                           on the link under the rows. */
+                        onClicked: root.groupOpen = !root.groupOpen
                     }
                 }
 
