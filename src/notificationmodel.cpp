@@ -488,6 +488,7 @@ bool NotificationModel::replaceByTag(const Notification &n)
                 updated.senderIcon = old.senderIcon;
             }
             m_displayed[i] = updated;
+            moveMembers(old.id, updated.id);
             if (m_hovered.remove(old.id)) {
                 m_hovered.insert(updated.id);   // same card, same pointer
             }
@@ -510,6 +511,7 @@ bool NotificationModel::replaceByTag(const Notification &n)
                 updated.senderIcon = old.senderIcon;
             }
             m_waiting[i] = updated;
+            moveMembers(old.id, updated.id);
             Q_EMIT notificationClosed(old.id, CloseReason::Expired);
             return true;
         }
@@ -581,7 +583,12 @@ bool NotificationModel::coalesce(const Notification &n)
 
     Notification merged = n;
     merged.groupCount = 1 + int(members.size());
-    m_members.insert(merged.id, members);
+    /* Empty when the burst's earlier cards were already gone (dismissed,
+       expired) by the time it crossed the threshold. An owner with an empty
+       list is still an owner to every m_members.contains(). */
+    if (!members.isEmpty()) {
+        m_members.insert(merged.id, members);
+    }
 
     /* The group is on screen: its newest card becomes the merged card where it
        stands, and the rest leave the screen (their notifications live on as
@@ -783,34 +790,12 @@ bool NotificationModel::closeId(uint id, uint reason)
 
     /* A group's top card. Withdrawn by its sender (CloseNotification), only
        that one goes and the newest member takes its place, since the rest
-       are still news. Any other end — it expired, the user dismissed the
-       stack, Clear all — closes the whole group with it, each member's
-       sender told the same reason. */
+       are still news; see closeOne(). Any other end through here — it
+       expired, the user dismissed the stack, Clear all — closes the whole
+       group with it, each member's sender told the same reason. */
     if (m_members.contains(id)) {
         if (reason == CloseReason::Closed) {
-            QList<Notification> rest = m_members.take(id);
-            Notification next = rest.takeFirst();
-            next.groupCount = 1 + int(rest.size());
-            if (!rest.isEmpty()) {
-                m_members.insert(next.id, rest);
-            }
-            const int at = indexOfDisplayed(id);
-            if (at >= 0) {
-                next.displayedAt = m_displayed.at(at).displayedAt;
-                if (m_hovered.remove(id)) {
-                    m_hovered.insert(next.id);
-                }
-                m_displayed[at] = next;
-                Q_EMIT dataChanged(index(at), index(at));
-            } else {
-                for (Notification &w : m_waiting) {
-                    if (w.id == id) {
-                        w = next;
-                    }
-                }
-            }
-            Q_EMIT notificationClosed(id, reason);
-            return true;
+            return closeOne(id, reason);
         }
         for (const Notification &m : m_members.take(id)) {
             m_hovered.remove(m.id);
@@ -850,6 +835,48 @@ bool NotificationModel::closeId(uint id, uint reason)
         }
     }
     return false;
+}
+
+void NotificationModel::moveMembers(uint from, uint to)
+{
+    if (from != to && m_members.contains(from)) {
+        m_members.insert(to, m_members.take(from));
+    }
+}
+
+bool NotificationModel::closeOne(uint id, uint reason)
+{
+    if (closeMember(id, reason)) {
+        return true;
+    }
+    QList<Notification> rest = m_members.take(id);
+    if (rest.isEmpty()) {
+        return closeId(id, reason);   // not a group: an ordinary close
+    }
+    /* The newest member takes the card's place, keeping its slot, its age
+       and the pointer on it. */
+    Notification next = rest.takeFirst();
+    next.groupCount = 1 + int(rest.size());
+    if (!rest.isEmpty()) {
+        m_members.insert(next.id, rest);
+    }
+    const int at = indexOfDisplayed(id);
+    if (at >= 0) {
+        next.displayedAt = m_displayed.at(at).displayedAt;
+        if (m_hovered.remove(id)) {
+            m_hovered.insert(next.id);
+        }
+        m_displayed[at] = next;
+        Q_EMIT dataChanged(index(at), index(at));
+    } else {
+        for (Notification &w : m_waiting) {
+            if (w.id == id) {
+                w = next;
+            }
+        }
+    }
+    Q_EMIT notificationClosed(id, reason);
+    return true;
 }
 
 int NotificationModel::closeEverything(uint reason)
@@ -950,8 +977,9 @@ void NotificationModel::snooze(uint id)
     /* Dismissed, not Expired: the user acted on it. The sender is told it is
        closed and finds out nothing about the snooze, which is correct — a
        notification coming back later is our behaviour, not a change to the
-       one it sent. */
-    closeId(id, CloseReason::Dismissed);
+       one it sent. Only this message is snoozed: the rest of its group stays
+       up, as for any other act on one card. */
+    closeOne(id, CloseReason::Dismissed);
 }
 
 void NotificationModel::mute(uint id, int minutes)
@@ -988,7 +1016,7 @@ void NotificationModel::sendReply(uint id, const QString &text)
         return;
     }
     Q_EMIT replied(id, text);
-    closeId(id, CloseReason::Dismissed);
+    closeOne(id, CloseReason::Dismissed);
 }
 
 namespace
@@ -1039,7 +1067,7 @@ void NotificationModel::open(QQuickWindow *window, uint id)
         if (!entry.isEmpty()) {
             Q_EMIT launchRequested(entry, QString());
         }
-        closeId(id, CloseReason::Dismissed);
+        closeOne(id, CloseReason::Dismissed);
         return;
     }
     /* With a token, so the app's window may come to the front. Same bounded
@@ -1052,7 +1080,7 @@ void NotificationModel::open(QQuickWindow *window, uint id)
         *fired = true;
         Q_EMIT launchRequested(entry, token);
         if (isLive(id)) {
-            closeId(id, CloseReason::Dismissed);
+            closeOne(id, CloseReason::Dismissed);
         }
     };
     auto future = KWaylandExtras::xdgActivationToken(window, 0, entry);
@@ -1114,7 +1142,9 @@ void NotificationModel::invokeAction(uint id, const QString &key)
         return;
     }
     Q_EMIT actionInvoked(id, key);
-    closeId(id, CloseReason::Dismissed);
+    /* That message is dealt with; the rest of a stack is still unread, and
+       its senders must not hear they were dismissed. */
+    closeOne(id, CloseReason::Dismissed);
 }
 
 int NotificationModel::liveCount() const
@@ -1388,15 +1418,10 @@ void NotificationModel::setLockPrivacyDefault(Notification::LockPrivacy policy)
 
 void NotificationModel::dropHiddenForPrivacy()
 {
-    /* The queue first. Cards held back by the display limit were promoted
-       by update() as the displayed ones below closed, and lived out their
-       timeouts on the lock screen as if Hide had never been asked for. */
-    for (int i = m_waiting.size() - 1; i >= 0; --i) {
-        if (effectiveLockPrivacy(m_waiting.at(i)) == Notification::LockPrivacy::Hide) {
-            const uint id = m_waiting.takeAt(i).id;
-            Q_EMIT notificationClosed(id, CloseReason::Expired);
-        }
-    }
+    /* Members first, so that a hidden top card below passes its group to a
+       member that may be shown. Closing the top card alone used to strand
+       a queued group's members (no card, never closed, senders waiting for
+       ever), and closing it as a group took shown members with it. */
     QList<uint> hiddenMembers;
     for (const QList<Notification> &list : std::as_const(m_members)) {
         for (const Notification &m : list) {
@@ -1408,10 +1433,22 @@ void NotificationModel::dropHiddenForPrivacy()
     for (uint id : std::as_const(hiddenMembers)) {
         closeMember(id, CloseReason::Expired);
     }
+    /* Then the queue. Cards held back by the display limit were promoted
+       by update() as the displayed ones below closed, and lived out their
+       timeouts on the lock screen as if Hide had never been asked for. */
+    QList<uint> hiddenWaiting;
+    for (const Notification &n : std::as_const(m_waiting)) {
+        if (effectiveLockPrivacy(n) == Notification::LockPrivacy::Hide) {
+            hiddenWaiting << n.id;
+        }
+    }
+    for (uint id : std::as_const(hiddenWaiting)) {
+        closeOne(id, CloseReason::Expired);
+    }
     const QList<Notification> shown = m_displayed;
     for (const Notification &n : shown) {
         if (!n.closing && effectiveLockPrivacy(n) == Notification::LockPrivacy::Hide) {
-            closeId(n.id, CloseReason::Expired);
+            closeOne(n.id, CloseReason::Expired);
         }
     }
 }

@@ -873,15 +873,19 @@ private Q_SLOTS:
     }
 
     /* A click on a card always opens: here it has no default action and no
-       app to launch, so it is dismissed, stacked or not; it never expands. */
+       app to launch, so it is dismissed, stacked or not; it never expands.
+       Only the message clicked: the rest of the stack is still unread, and
+       the newest of it takes the card. */
     void aClickOpensRatherThanExpanding()
     {
         QQuickItem *card = groupOf(3, QStringLiteral("Feed"));
         QSignalSpy closed(m_model, &NotificationModel::notificationClosed);
         QTest::mouseMove(m_win, drawn(card).center().toPoint());
         QTest::mouseClick(m_win, Qt::LeftButton, Qt::NoModifier, drawn(card).center().toPoint());
-        QTRY_COMPARE(m_model->liveCount(), 0);
-        QCOMPARE(closed.size(), 3);   // the group goes with its top card
+        QTRY_COMPARE(closed.size(), 1);
+        QCOMPARE(m_model->liveCount(), 1);
+        QCOMPARE(m_model->index(0).data(NotificationModel::GroupCountRole).toInt(), 2);
+        QVERIFY(!card->property("groupOpen").toBool());   // a click never expands
     }
 
     /* More members than the card shows: the rest are a link to the centre. */

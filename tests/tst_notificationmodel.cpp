@@ -244,6 +244,155 @@ private Q_SLOTS:
         QCOMPARE(m.index(0).data(NotificationModel::GroupCountRole).toInt(), 2);
     }
 
+    /* The one card not playing its exit. */
+    static int liveRow(const NotificationModel &m)
+    {
+        for (int r = 0; r < m.rowCount(); ++r) {
+            if (!m.index(r).data(NotificationModel::ClosingRole).toBool()) {
+                return r;
+            }
+        }
+        return -1;
+    }
+
+    /* Each id is told it closed once, and only once. */
+    static QMap<uint, int> closeCounts(const QSignalSpy &spy)
+    {
+        QMap<uint, int> counts;
+        for (const QList<QVariant> &args : spy) {
+            ++counts[args.at(0).toUInt()];
+        }
+        return counts;
+    }
+
+    /* The burst crossed the threshold after its earlier cards had gone, so
+       the merged card has no members. Its sender withdrawing it (a chat
+       marking the message read) took the first of an empty list and crashed
+       the daemon. */
+    void withdrawingAMergedCardWithNoMembers()
+    {
+        NotificationModel m;
+        m.setCoalesce(3, 20000);
+        m.setTimeouts(0, 0, 0);
+        m.setExitMs(0);
+        m.insert(note(QStringLiteral("Chat"), QStringLiteral("a"), {}, 401));
+        m.insert(note(QStringLiteral("Chat"), QStringLiteral("b"), {}, 402));
+        m.dismiss(401);
+        m.dismiss(402);
+        m.insert(note(QStringLiteral("Chat"), QStringLiteral("c"), {}, 403));
+        QCOMPARE(m.index(0).data(NotificationModel::GroupCountRole).toInt(), 1);
+        QSignalSpy closed(&m, &NotificationModel::notificationClosed);
+        QVERIFY(m.closeId(403, CloseReason::Closed));
+        QCOMPARE(closed.size(), 1);
+        QCOMPARE(m.liveCount(), 0);
+    }
+
+    /* Acting on a stack's top card (opening it, an action, a reply, a
+       snooze) deals with that one message. The rest of the group is still
+       unread: the newest takes its place, and nobody is told the others
+       were dismissed. */
+    void actingOnTheTopCardLeavesTheRest()
+    {
+        auto group = [](NotificationModel &m) {
+            m.setCoalesce(3, 20000);
+            m.setTimeouts(0, 0, 0);
+            for (uint id = 801; id <= 803; ++id) {
+                Notification n = note(QStringLiteral("Chat"), QStringLiteral("c%1").arg(id), {}, id);
+                n.actions = {QStringLiteral("default"), QString()};
+                n.inlineReply = true;
+                m.insert(n);
+            }
+        };
+        const QList<std::function<void(NotificationModel &)>> acts = {
+            [](NotificationModel &m) { m.invokeAction(803, QStringLiteral("default")); },
+            [](NotificationModel &m) { m.open(nullptr, 803); },
+            [](NotificationModel &m) { m.sendReply(803, QStringLiteral("ok")); },
+            [](NotificationModel &m) { m.snooze(803); },
+        };
+        for (const auto &act : acts) {
+            NotificationModel m;
+            group(m);
+            QSignalSpy closed(&m, &NotificationModel::notificationClosed);
+            act(m);
+            QCOMPARE(closed.size(), 1);
+            QCOMPARE(closed.first().at(0).toUInt(), 803u);
+            QVERIFY(m.isLive(801) && m.isLive(802));
+            QCOMPARE(m.liveCount(), 1);
+            QCOMPARE(m.index(liveRow(m)).data(NotificationModel::IdRole).toUInt(), 802u);
+            QCOMPARE(m.index(liveRow(m)).data(NotificationModel::GroupCountRole).toInt(), 2);
+        }
+    }
+
+    /* A queued group whose top card asks to be hidden on the lock screen
+       passes the group on, as one on screen does. It used to close only the
+       top: the members had no card, were never closed, and their senders
+       waited for ever. */
+    void aHiddenQueuedTopCardPassesTheGroupOn()
+    {
+        NotificationModel m;
+        m.setCoalesce(3, 20000);
+        m.setTimeouts(0, 0, 0);
+        m.setExitMs(0);
+        m.setLimit(1);
+        m.insert(note(QStringLiteral("Other"), QStringLiteral("x"), {}, 500));
+        m.insert(note(QStringLiteral("Chat"), QStringLiteral("a"), {}, 501));
+        m.insert(note(QStringLiteral("Chat"), QStringLiteral("b"), {}, 502));
+        Notification secret = note(QStringLiteral("Chat"), QStringLiteral("secret"), {}, 503);
+        secret.lockPrivacy = Notification::LockPrivacy::Hide;
+        m.insert(secret);
+        QSignalSpy closed(&m, &NotificationModel::notificationClosed);
+        m.setScreenLocked(true);
+        QCOMPARE(closeCounts(closed), (QMap<uint, int>{{503, 1}}));
+        QVERIFY(m.isLive(501) && m.isLive(502));
+        m.setScreenLocked(false);
+        m.dismissAll();
+        QCOMPARE(closeCounts(closed), (QMap<uint, int>{{500, 1}, {501, 1}, {502, 1}, {503, 1}}));
+        QVERIFY(!m.isLive(501) && !m.isLive(502));
+    }
+
+    /* Same on screen: the hidden top card goes, the members it can show stay. */
+    void aHiddenTopCardOnScreenPassesTheGroupOn()
+    {
+        NotificationModel m;
+        m.setCoalesce(3, 20000);
+        m.setTimeouts(0, 0, 0);
+        m.setExitMs(0);
+        m.insert(note(QStringLiteral("Chat"), QStringLiteral("a"), {}, 511));
+        m.insert(note(QStringLiteral("Chat"), QStringLiteral("b"), {}, 512));
+        Notification secret = note(QStringLiteral("Chat"), QStringLiteral("secret"), {}, 513);
+        secret.lockPrivacy = Notification::LockPrivacy::Hide;
+        m.insert(secret);
+        QSignalSpy closed(&m, &NotificationModel::notificationClosed);
+        m.setScreenLocked(true);
+        QCOMPARE(closeCounts(closed), (QMap<uint, int>{{513, 1}}));
+        QVERIFY(m.isLive(511) && m.isLive(512));
+        QCOMPARE(m.index(liveRow(m)).data(NotificationModel::IdRole).toUInt(), 512u);
+    }
+
+    /* A group's top card replaced through its stack tag keeps its members.
+       They were left behind under the old id, live with no card for ever. */
+    void aTagReplaceKeepsTheGroup()
+    {
+        NotificationModel m;
+        m.setCoalesce(3, 20000);
+        m.setTimeouts(0, 0, 0);
+        m.setExitMs(0);
+        for (uint id = 601; id <= 603; ++id) {
+            m.insert(note(QStringLiteral("Chat"), QStringLiteral("c%1").arg(id), {}, id));
+        }
+        Notification tagged = note(QStringLiteral("Chat"), QStringLiteral("tagged"), {}, 603);
+        tagged.stackTag = QStringLiteral("t");
+        m.insert(tagged);                            // replaces_id: gains the tag
+        Notification next = note(QStringLiteral("Chat"), QStringLiteral("next"), {}, 604);
+        next.stackTag = QStringLiteral("t");
+        QSignalSpy closed(&m, &NotificationModel::notificationClosed);
+        m.insert(next);
+        QCOMPARE(m.index(0).data(NotificationModel::GroupCountRole).toInt(), 3);
+        m.dismissAll();
+        QCOMPARE(closeCounts(closed), (QMap<uint, int>{{601, 1}, {602, 1}, {603, 1}, {604, 1}}));
+        QVERIFY(!m.isLive(601) && !m.isLive(602));
+    }
+
     /* A card that stays up is told the time has moved on. */
     void theAgeTickRunsWhileCardsAreShown()
     {

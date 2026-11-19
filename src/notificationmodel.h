@@ -132,6 +132,9 @@ public:
 
     /* Returns the id actually used (may be the replaced one). */
     uint insert(Notification n);
+    /* Closes this one notification. A group's top card hands the group to
+       its newest member instead of taking the group with it. */
+    bool closeOne(uint id, uint reason);
     bool closeId(uint id, uint reason);
 
     /* How long a card is kept on screen after it is closed, so it can animate
@@ -305,6 +308,8 @@ private:
     /* Take a row off the screen without telling its sender, for a card
        whose notification lives on as a member of another. */
     void retireRow(uint id);
+    /* A group follows its top card to a new id. */
+    void moveMembers(uint from, uint to);
 
     int m_limit = 4;
     int m_timeoutLow = 4000;
