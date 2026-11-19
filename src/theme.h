@@ -78,6 +78,7 @@ Q_SIGNALS:
 
 private:
     QJsonValue lookup(const QString &key, int depth = 0) const;
+    QJsonObject withBase(const QJsonObject &theme, const QString &path, int depth);
     void watchFile(const QString &path);
 
     QJsonObject m_values;

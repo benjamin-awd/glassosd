@@ -65,6 +65,10 @@ glassosd_test(tst_notificationserver
 glassosd_test(tst_snoozestore
     SOURCES snoozestore.cpp)
 
+glassosd_test(tst_theme
+    SOURCES theme.cpp
+    LIBS Qt6::Qml KF6::ConfigCore)
+
 glassosd_test(tst_mpriscontroller
     SOURCES mpriscontroller.cpp
     LIBS Qt6::Qml)

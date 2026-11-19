@@ -136,7 +136,7 @@ void Theme::reload()
             qWarning("glassosd: %s must contain a JSON object", qUtf8Printable(path));
             continue;
         }
-        m_values = doc.object();
+        m_values = withBase(doc.object(), path, 0);
         m_path = path;
         m_name = QFileInfo(path).completeBaseName();
         m_loaded = true;
@@ -149,6 +149,67 @@ void Theme::reload()
 
     ++m_revision;
     Q_EMIT changed();
+}
+
+/* "extends": "name" loads another theme underneath this one: its keys are
+   the defaults and this file's win. Without it a variant had to restate the
+   whole theme, and did not: macos-light.json said "Geometry is shared with
+   macos.json; only the palette differs", but nothing shared anything, so the
+   light banner fell back to built-in metrics for nineteen keys — the motion
+   (no slide), the padding, the icon box and the type sizes among them.
+
+   Resolved next to the file first, then on the search path, like ThemeFile.
+   Merged at the top level: a nested object in this file replaces the base's
+   branch, and a flat "a.b" key overrides one leaf (lookup() prefers it). */
+QJsonObject Theme::withBase(const QJsonObject &theme, const QString &path, int depth)
+{
+    const QString base = theme.value(QStringLiteral("extends")).toString();
+    if (base.isEmpty()) {
+        return theme;
+    }
+    if (depth >= 4) {
+        qWarning("glassosd: %s: \"extends\" goes more than four deep; ignoring the rest",
+                 qUtf8Printable(path));
+        return theme;
+    }
+    QStringList candidates;
+    if (QFileInfo(base).isAbsolute()) {
+        candidates << base;
+    } else {
+        const QString here = QFileInfo(path).absolutePath();
+        candidates << here + QLatin1Char('/') + base + QStringLiteral(".json")
+                   << here + QLatin1Char('/') + base;
+        for (const QString &dir : searchPaths()) {
+            candidates << dir + QLatin1Char('/') + base + QStringLiteral(".json")
+                       << dir + QLatin1Char('/') + base;
+        }
+    }
+    for (const QString &candidate : std::as_const(candidates)) {
+        if (QFileInfo(candidate).canonicalFilePath() == QFileInfo(path).canonicalFilePath()) {
+            continue;   // a theme cannot extend itself
+        }
+        QFile f(candidate);
+        if (!f.open(QIODevice::ReadOnly)) {
+            continue;
+        }
+        QJsonParseError err{};
+        const QJsonDocument doc = QJsonDocument::fromJson(f.readAll(), &err);
+        if (err.error != QJsonParseError::NoError || !doc.isObject()) {
+            qWarning("glassosd: %s extends %s, which is not a valid theme",
+                     qUtf8Printable(path), qUtf8Printable(candidate));
+            return theme;
+        }
+        watchFile(candidate);   // editing the base re-themes the variant too
+        QJsonObject merged = withBase(doc.object(), candidate, depth + 1);
+        for (auto it = theme.constBegin(); it != theme.constEnd(); ++it) {
+            merged.insert(it.key(), it.value());
+        }
+        merged.remove(QStringLiteral("extends"));
+        return merged;
+    }
+    qWarning("glassosd: %s extends '%s', which was not found", qUtf8Printable(path),
+             qUtf8Printable(base));
+    return theme;
 }
 
 QJsonValue Theme::lookup(const QString &key, int depth) const

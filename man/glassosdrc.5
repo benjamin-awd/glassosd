@@ -1164,6 +1164,25 @@ values get reused in a stylesheet:
   "slider.track": "@control.fill"
 }
 .fi
+.SS Building on another theme
+.B extends
+names a theme to load underneath this one. Its keys are the defaults and
+this file's keys win, so a variant restates only what differs \(em a light
+palette over a dark theme's geometry and motion, say. The name is looked up
+beside the file first, then where
+.B ThemeFile
+is looked up. Chains of up to four are followed; a nested object replaces
+the base's branch, and a flat key such as
+.B motion.in
+overrides a single value.
+.PP
+.nf
+{
+  "extends": "macos",
+  "card.background": "rgba(246, 246, 249, 0.80)",
+  "text.primary": "rgba(28, 28, 30, 1.0)"
+}
+.fi
 .SS Making it not look like glass
 Set opaque surfaces and turn the sheen off.
 .I material\-dark.json
