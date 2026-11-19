@@ -5,6 +5,9 @@
 */
 #include "systemcontrols.h"
 
+#include <csignal>
+#include <unistd.h>
+
 #include <QDebug>
 #include <QProcess>
 #include <QRegularExpression>
@@ -73,12 +76,20 @@ void SystemControls::runAsync(const QString &cmd, std::function<void(const QStri
             complete(QString());
         }
     });
-    /* Short: these are local queries. A hung audio server must not leave a
-       reading pending forever; a stale value for one tick is harmless. */
+    /* A hung audio server must not leave a reading pending forever; a stale
+       value for one tick is harmless. Short: these are local queries. The whole process group goes, not
+       only the shell in front: killing /bin/sh left whatever it had
+       started (the first pactl of a two-command read, or anything a hung
+       tool forked) running on as an orphan. */
     QTimer::singleShot(400, p, [p, complete] {
+        if (const qint64 pid = p->processId(); pid > 0) {
+            ::kill(-pid_t(pid), SIGKILL);
+        }
         p->kill();
         complete(QString());
     });
+    /* Its own process group, so the timeout can kill everything in it. */
+    p->setChildProcessModifier([] { ::setpgid(0, 0); });
     p->start(QStringLiteral("/bin/sh"), {QStringLiteral("-c"), cmd});
 }
 

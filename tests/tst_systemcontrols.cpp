@@ -132,6 +132,34 @@ private Q_SLOTS:
         c.refresh();
         QTRY_COMPARE_WITH_TIMEOUT(c.volume(), 0.33, 2000);
     }
+
+    /* A tool that hangs is killed with everything it started. The timeout
+       killed only the /bin/sh in front of it, so the first pactl of the
+       two-command read, or anything a tool forked, lived on as an orphan. */
+    void aHungToolIsKilledWithItsChildren()
+    {
+        const QByteArray pidFile = m_dir.filePath(QStringLiteral("child.pid")).toUtf8();
+        QFile::remove(QString::fromUtf8(pidFile));
+        tool(QStringLiteral("wpctl"),
+             "case \"$1\" in get-volume) sleep 30 & echo $! > " + pidFile + "; wait;; esac\n");
+        tool(QStringLiteral("brightnessctl"), "exit 1\n");
+        {
+            SystemControls c;
+            QTRY_VERIFY(QFile::exists(QString::fromUtf8(pidFile)));
+            QFile f(QString::fromUtf8(pidFile));
+            QVERIFY(f.open(QIODevice::ReadOnly));
+            const QByteArray pid = f.readAll().trimmed();
+            QVERIFY(!pid.isEmpty());
+            const QString proc = QStringLiteral("/proc/") + QString::fromUtf8(pid);
+            QVERIFY(QFile::exists(proc));
+            /* Past the 400 ms timeout; a zombie (reaped later by init) has
+               no cmdline, so check that rather than the directory. */
+            QTRY_VERIFY_WITH_TIMEOUT([&] {
+                QFile cmd(proc + QStringLiteral("/cmdline"));
+                return !cmd.open(QIODevice::ReadOnly) || cmd.readAll().isEmpty();
+            }(), 3000);
+        }
+    }
 };
 
 QTEST_GUILESS_MAIN(TestSystemControls)
