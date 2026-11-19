@@ -9,6 +9,7 @@
     dropping to the built-in values for every key it did not restate.
 */
 #include "theme.h"
+#include "colorscheme.h"
 
 #include <KConfigGroup>
 #include <KSharedConfig>
@@ -95,6 +96,65 @@ private Q_SLOTS:
         Theme t;
         QVERIFY(t.loaded());
         QCOMPARE(t.num(QStringLiteral("k"), 0), 5.0);
+    }
+
+    /* Theme=auto follows the desktop: ThemeFileLight in light mode,
+       ThemeFile otherwise, and ThemeFile alone when no light file is named. */
+    void autoFollowsTheDesktop()
+    {
+        write(QStringLiteral("night"), R"j({"x": 1})j");
+        write(QStringLiteral("day"), R"j({"x": 2})j");
+        auto cfg = KSharedConfig::openConfig(QStringLiteral("glassosdrc"));
+        KConfigGroup g(cfg, QStringLiteral("Appearance"));
+        g.writeEntry("Theme", QStringLiteral("auto"));
+        g.writeEntry("ThemeFile", QStringLiteral("night"));
+        g.writeEntry("ThemeFileLight", QStringLiteral("day"));
+        cfg->sync();
+
+        ColorScheme::setPrefersDarkForTesting(true);
+        Theme t;
+        QCOMPARE(t.name(), QStringLiteral("night"));
+        ColorScheme::setPrefersDarkForTesting(false);
+        t.reload();
+        QCOMPARE(t.name(), QStringLiteral("day"));
+
+        g.writeEntry("Theme", QStringLiteral("dark"));   // a fixed theme ignores the desktop
+        cfg->sync();
+        t.reload();
+        QCOMPARE(t.name(), QStringLiteral("night"));
+
+        g.writeEntry("Theme", QStringLiteral("auto"));
+        g.deleteEntry("ThemeFileLight");
+        cfg->sync();
+        t.reload();
+        QCOMPARE(t.name(), QStringLiteral("night"));
+
+        g.deleteEntry("Theme");
+        cfg->sync();
+        ColorScheme::setPrefersDarkForTesting(true);
+    }
+
+    /* A theme's blur.materialLuma is written to kwinrc for glassblur, clamped;
+       a theme without it leaves kwinrc as it was. */
+    void materialRangeGoesToKwinrc()
+    {
+        auto kwinrc = KSharedConfig::openConfig(QStringLiteral("kwinrc"));
+        KConfigGroup glass(kwinrc, QStringLiteral("Effect-glassblur"));
+        glass.deleteGroup();
+        kwinrc->sync();
+
+        write(QStringLiteral("lit"), R"j({"blur": {"materialLuma": [60, 140]}})j");
+        select(QStringLiteral("lit"));
+        { Theme t; }
+        kwinrc->reparseConfiguration();
+        QCOMPARE(glass.readEntry("MaterialLumaMin", -1), 60);
+        QCOMPARE(glass.readEntry("MaterialLumaMax", -1), 100);
+
+        write(QStringLiteral("plain"), R"j({"x": 1})j");
+        select(QStringLiteral("plain"));
+        { Theme t; }
+        kwinrc->reparseConfiguration();
+        QCOMPARE(glass.readEntry("MaterialLumaMin", -1), 60);
     }
 
     void cleanupTestCase()

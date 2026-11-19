@@ -332,7 +332,7 @@ case "$cmd" in
     echo
     echo "appearance:"
     printf '%s\n' \
-      "Theme|dark" "ThemeFile|(built-in)" "AccentColor|#3daee9" \
+      "Theme|dark" "ThemeFile|(built-in)" "ThemeFileLight|(ThemeFile)" "AccentColor|#3daee9" \
       "LevelStyle|segmented" "Output|current" \
       "NotifyOutput|(follows Output)" "OsdOutput|(follows Output)" \
       "CentreOutput|(follows Output)" "Scale|1.0" "NotifyScale|1.0" \

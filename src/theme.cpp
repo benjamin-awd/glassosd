@@ -4,6 +4,11 @@
     SPDX-License-Identifier: GPL-2.0-or-later
 */
 #include "theme.h"
+#include "colorscheme.h"
+
+#include <QDBusConnection>
+#include <QDBusMessage>
+#include <QJsonArray>
 
 #include <KConfigGroup>
 #include <KSharedConfig>
@@ -97,7 +102,17 @@ void Theme::reload()
     auto cfg = KSharedConfig::openConfig(QStringLiteral("glassosdrc"));
     cfg->reparseConfiguration();
     const KConfigGroup g(cfg, QStringLiteral("Appearance"));
-    const QString requested = g.readEntry("ThemeFile", QString());
+    /* With Theme=auto and the desktop in light mode, ThemeFileLight wins
+       over ThemeFile, so one setting pair follows Plasma's colour scheme. An
+       unset ThemeFileLight leaves ThemeFile in charge either way. */
+    QString requested = g.readEntry("ThemeFile", QString());
+    if (g.readEntry("Theme", QString()).compare(QLatin1String("auto"), Qt::CaseInsensitive) == 0
+        && !ColorScheme::prefersDark()) {
+        const QString light = g.readEntry("ThemeFileLight", QString());
+        if (!light.isEmpty()) {
+            requested = light;
+        }
+    }
 
     QStringList candidates;
     if (!requested.isEmpty()) {
@@ -146,6 +161,8 @@ void Theme::reload()
               static_cast<long long>(m_values.size()));
         break;
     }
+
+    applyMaterial();
 
     ++m_revision;
     Q_EMIT changed();
@@ -210,6 +227,42 @@ QJsonObject Theme::withBase(const QJsonObject &theme, const QString &path, int d
     qWarning("glassosd: %s extends '%s', which was not found", qUtf8Printable(path),
              qUtf8Printable(base));
     return theme;
+}
+
+/* kwin-glassblur remaps the backdrop's luminance under glassosd's windows
+   into [MaterialLumaMin, MaterialLumaMax] percent of kwinrc's
+   [Effect-glassblur]. The right range depends on the theme — about 10-40 for
+   a dark card, 60-100 for a light one — so a theme may carry it as
+   "blur.materialLuma": [min, max], and loading the theme writes it there and
+   asks the effect to re-read it. A theme without the key leaves kwinrc
+   alone, so nothing changes for anyone not using glassblur. */
+void Theme::applyMaterial()
+{
+    const QJsonArray range = lookup(QStringLiteral("blur.materialLuma")).toArray();
+    if (range.size() != 2 || !range.at(0).isDouble() || !range.at(1).isDouble()) {
+        return;
+    }
+    const int lo = qBound(0, range.at(0).toInt(), 100);
+    const int hi = qBound(lo, range.at(1).toInt(), 100);
+    auto kwinrc = KSharedConfig::openConfig(QStringLiteral("kwinrc"));
+    KConfigGroup g(kwinrc, QStringLiteral("Effect-glassblur"));
+    if (g.readEntry("MaterialLumaMin", -1) == lo && g.readEntry("MaterialLumaMax", -1) == hi) {
+        return;
+    }
+    g.writeEntry("MaterialLumaMin", lo);
+    g.writeEntry("MaterialLumaMax", hi);
+    kwinrc->sync();
+    /* Not from a test: the suite's kwinrc is a scratch file, and the real
+       compositor has no business re-reading its own because of it. */
+    if (QStandardPaths::isTestModeEnabled()) {
+        return;
+    }
+    QDBusMessage call = QDBusMessage::createMethodCall(QStringLiteral("org.kde.KWin"), QStringLiteral("/Effects"),
+                                                       QStringLiteral("org.kde.kwin.Effects"),
+                                                       QStringLiteral("reconfigureEffect"));
+    call.setArguments({QStringLiteral("glassblur")});
+    QDBusConnection::sessionBus().call(call, QDBus::NoBlock);
+    qInfo("glassosd: glassblur material set to %d-%d%% for theme '%s'", lo, hi, qUtf8Printable(m_name));
 }
 
 QJsonValue Theme::lookup(const QString &key, int depth) const

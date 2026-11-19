@@ -42,6 +42,7 @@ qt_add_executable(glassosd
     src/rules.cpp
     src/appsettings.cpp
     src/appearance.cpp
+    src/colorscheme.cpp
     src/mpriscontroller.cpp
     src/trayicon.cpp
     src/historymodel.cpp

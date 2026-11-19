@@ -80,6 +80,7 @@ private:
     QJsonValue lookup(const QString &key, int depth = 0) const;
     QJsonObject withBase(const QJsonObject &theme, const QString &path, int depth);
     void watchFile(const QString &path);
+    void applyMaterial();
 
     QJsonObject m_values;
     QString m_name;

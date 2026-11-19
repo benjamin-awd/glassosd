@@ -130,14 +130,24 @@ configuration left behind after switching away from it.
 .SH THE APPEARANCE GROUP
 .TP
 .B Theme
-.B dark
+.BR dark ,
+.BR light ,
 or
-.BR light .
+.BR auto ,
+which follows the desktop's colour scheme as the freedesktop Settings portal
+reports it (Plasma's light or dark colour scheme), switching live.
 .TP
 .B ThemeFile
 Name of a theme in the search path; see
 .B THEMES
 below.
+.TP
+.B ThemeFileLight
+With
+.BR Theme=auto ,
+the theme used while the desktop is in light mode;
+.B ThemeFile
+is used in dark mode. Unset, ThemeFile is used in both.
 .TP
 .B AccentColor
 Overrides the theme's accent. Darkened automatically if it would fail contrast.
@@ -1203,6 +1213,24 @@ both do this and are worth reading as worked examples.
 There is also a one\-shot escape hatch needing no theme file:
 .B glassosdctl solidity 1.0
 pushes every glass surface toward opaque.
+.SS kwin\-glassblur's material
+A theme may set
+.B blur.materialLuma
+to
+.BR "[min, max]" ,
+percentages for kwin\-glassblur's backdrop luminance range. Loading the theme
+writes them to
+.B MaterialLumaMin
+and
+.B MaterialLumaMax
+in kwinrc's
+.B [Effect\-glassblur]
+and asks the effect to re\-read them, so a light and a dark theme each bring
+the backdrop that suits them: about
+.B [10, 40]
+for a dark card,
+.B [60, 100]
+for a light one. A theme without the key leaves kwinrc alone.
 .SS If a theme does not load
 A malformed file is reported with the exact byte offset, and the daemon falls
 back to the next theme in the search path rather than starting unstyled. Watch

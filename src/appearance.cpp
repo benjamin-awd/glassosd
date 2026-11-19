@@ -4,6 +4,7 @@
     SPDX-License-Identifier: GPL-2.0-or-later
 */
 #include "appearance.h"
+#include "colorscheme.h"
 
 #include <KConfigGroup>
 
@@ -56,8 +57,11 @@ void Appearance::reload()
     m_config->reparseConfiguration();
     KConfigGroup g(m_config, QStringLiteral("Appearance"));
 
+    /* "auto" follows the desktop's colour scheme (see ColorScheme). */
     const QString theme = g.readEntry("Theme", QStringLiteral("dark"));
-    m_dark = theme.compare(QLatin1String("light"), Qt::CaseInsensitive) != 0;
+    m_dark = theme.compare(QLatin1String("auto"), Qt::CaseInsensitive) == 0
+                 ? ColorScheme::prefersDark()
+                 : theme.compare(QLatin1String("light"), Qt::CaseInsensitive) != 0;
 
     const QColor configured(g.readEntry("AccentColor", QStringLiteral("#3daee9")));
     /* An unparseable colour would otherwise blank every accented element. */

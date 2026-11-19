@@ -5,6 +5,7 @@
 */
 #include "capslockwatcher.h"
 #include "appearance.h"
+#include "colorscheme.h"
 #include "appsettings.h"
 #include "controller.h"
 #include "modules.h"
@@ -452,6 +453,15 @@ int main(int argc, char *argv[])
 
     auto *theme = engine.singletonInstance<Theme *>(QStringLiteral("org.glassosd.ui"),
                                                    QStringLiteral("Theme"));
+
+    /* Theme=auto: Plasma switching between light and dark re-reads the
+       palette (Appearance) and the theme file (Theme, which picks
+       ThemeFileLight in light mode and carries glassblur's material range). */
+    auto *colorScheme = new ColorScheme(&app);
+    QObject::connect(colorScheme, &ColorScheme::changed, &app, [appearance, theme] {
+        appearance->reload();
+        theme->reload();
+    });
 
     auto *appSettings = engine.singletonInstance<AppSettings *>(
         QStringLiteral("org.glassosd.ui"), QStringLiteral("AppSettings"));
