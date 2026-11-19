@@ -1056,7 +1056,7 @@ Item {
                            sender. */
                         font.bold: !Appearance.notifyHeader.includes("appname")
                         wrapMode: Text.WordWrap
-                        maximumLineCount: root.textOpen ? 6 : 2
+                        maximumLineCount: root.textOpen ? 6 : Style.notifyTitleLines
                         elide: Text.ElideRight
                     }
 

@@ -124,7 +124,7 @@ Item {
                         lineHeight: Style.notifyLinePx > 0 ? Style.notifyLinePx : 1.0
                         font.bold: true
                         wrapMode: Text.WordWrap
-                        maximumLineCount: 2
+                        maximumLineCount: Style.notifyTitleLines
                         elide: Text.ElideRight
                     }
 

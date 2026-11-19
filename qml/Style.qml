@@ -117,6 +117,10 @@ QtObject {
     readonly property int notifyTextPx: nnum("font.notifyPx", 0)
     readonly property int notifyTimePx: nnum("font.notifyTimePx", 0)
     readonly property int notifyLinePx: nnum("font.notifyLinePx", 0)
+    /* How many lines a card's title may wrap to before eliding. macOS keeps
+       a banner's title to one line; 2 is the default the other themes were
+       drawn with. The body and an opened card have their own limits. */
+    readonly property int notifyTitleLines: Math.max(1, Math.round(tnum("text.titleLines", 2)))
     /* The point-size scheme's base, for text on the card that has no px token
        (the reply field, action buttons, the menu). */
     readonly property int notifyFontSize: Math.max(6, Math.round(fontSize * ns))

@@ -705,6 +705,21 @@ private Q_SLOTS:
         QVERIFY(!card->property("textOpen").toBool());
     }
 
+    /* A card's title wraps to as many lines as the theme says (macOS: one),
+       two when it says nothing. */
+    void theTitleFollowsTheThemesLineCount()
+    {
+        Notification n = note(QStringLiteral("A title long enough to need more than one line on any card at all"));
+        m_model->insert(n);
+        QTRY_COMPARE(cards().size(), 1);
+        QQuickItem *title = findText(cards().constFirst(), n.summary);
+        QVERIFY(title);
+        QCOMPARE(title->property("maximumLineCount").toInt(), 2);
+        setTheme({{QStringLiteral("motion.in"), 120}, {QStringLiteral("motion.out"), 80},
+                  {QStringLiteral("text.titleLines"), 1}});
+        QTRY_COMPARE(title->property("maximumLineCount").toInt(), 1);
+    }
+
     /* An open group that falls to one card forgets it was open. The flag
        stayed set, and the app's next burst, coalescing into the same card,
        sprang open with nobody clicking. */
