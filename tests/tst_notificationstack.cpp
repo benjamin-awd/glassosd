@@ -604,6 +604,61 @@ private Q_SLOTS:
         QCOMPARE(m_model->rowCount(), 1);   // the click opened the menu, it did not dismiss
     }
 
+    /* A body longer than the card shows offers a chevron on hover that
+       opens it in place; the card grows and is not dismissed. */
+    void aLongBodyExpandsInPlace()
+    {
+        Notification n = note(QStringLiteral("long"));
+        n.body = QStringLiteral("word ").repeated(200);
+        m_model->insert(n);
+        QTRY_COMPARE(cards().size(), 1);
+        waitSettled();
+        QQuickItem *card = cards().constFirst();
+        QQuickItem *expander = nullptr;
+        std::function<void(QQuickItem *)> walk = [&](QQuickItem *it) {
+            for (QQuickItem *c : it->childItems()) {
+                if (c->property("text").toString() == QStringLiteral("\u203A")) {
+                    expander = c->parentItem();
+                }
+                walk(c);
+            }
+        };
+        walk(card);
+        QVERIFY(expander);
+        QVERIFY(!expander->isVisible());
+        QTest::mouseMove(m_win, drawn(card).center().toPoint());
+        QTRY_VERIFY(expander->isVisible());
+        const qreal before = card->height();
+        const QPoint at = expander->mapToScene(QPointF(expander->width() / 2, expander->height() / 2)).toPoint();
+        QTest::mouseMove(m_win, at);
+        QTest::mouseClick(m_win, Qt::LeftButton, Qt::NoModifier, at);
+        QTRY_VERIFY(card->property("expanded").toBool());
+        QTRY_VERIFY(card->height() > before + 20);
+        QCOMPARE(m_model->rowCount(), 1);
+    }
+
+    /* A short body offers nothing to expand. */
+    void aShortBodyHasNoChevron()
+    {
+        m_model->insert(note(QStringLiteral("short")));
+        QTRY_COMPARE(cards().size(), 1);
+        waitSettled();
+        QQuickItem *card = cards().constFirst();
+        QTest::mouseMove(m_win, drawn(card).center().toPoint());
+        QTest::qWait(50);
+        bool shown = false;
+        std::function<void(QQuickItem *)> walk = [&](QQuickItem *it) {
+            for (QQuickItem *c : it->childItems()) {
+                if (c->property("text").toString() == QStringLiteral("\u203A")) {
+                    shown = c->parentItem()->isVisible();
+                }
+                walk(c);
+            }
+        };
+        walk(card);
+        QVERIFY(!shown);
+    }
+
     /* e099271: a settings change re-sends the position. With a sliding theme
        the right margin is folded into the layout, and passing it to the
        layer shell as well pushed the surface inward on every change. */

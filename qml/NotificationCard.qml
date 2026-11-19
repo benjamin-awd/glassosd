@@ -432,6 +432,12 @@ Item {
         swipeRaw = target
         root.dismissed()
     }
+    /* The body opened in place by its chevron. The card grows; the cards
+       below move with the layout, and their regions follow (Surface reads
+       live geometry every frame). */
+    property bool expanded: false
+    readonly property int expandedLines: 20
+
     /* The committed swipe's flight, set by endSwipe(). */
     property int throwMs: Style.animOut
     property var throwCurve: [0.333, 0.0, 0.667, 1.0, 1.0, 1.0]
@@ -962,7 +968,7 @@ Item {
                            sender. */
                         font.bold: !Appearance.notifyHeader.includes("appname")
                         wrapMode: Text.WordWrap
-                        maximumLineCount: 2
+                        maximumLineCount: root.expanded ? 6 : 2
                         elide: Text.ElideRight
                     }
 
@@ -1047,6 +1053,7 @@ Item {
                 }
 
                 Text {
+                    id: bodyText
                     Layout.fillWidth: true
                     visible: text !== ""
                     text: root.entry.body
@@ -1061,9 +1068,48 @@ Item {
                     lineHeightMode: Style.notifyLinePx > 0 ? Text.FixedHeight : Text.ProportionalHeight
                     lineHeight: Style.notifyLinePx > 0 ? Style.notifyLinePx : 1.0
                     wrapMode: Text.WordWrap
-                    maximumLineCount: Appearance.bodyLines
+                    maximumLineCount: root.expanded ? root.expandedLines : Appearance.bodyLines
                     elide: Text.ElideRight
                     textFormat: Text.StyledText
+
+                    /* Shown on hover when there is more than fits, as macOS
+                       offers a chevron on a banner whose text is cut off.
+                       Opens the text in place instead of sending you to the
+                       centre or the app. Its own MouseArea, so the press does
+                       not reach the card's (which would run the default
+                       action or dismiss). */
+                    Rectangle {
+                        id: expander
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        anchors.rightMargin: -2
+                        width: 20
+                        height: 16
+                        radius: 8
+                        visible: root.pointerOn && (bodyText.truncated || root.expanded)
+                                 && !NotificationModel.screenLocked
+                        color: expanderArea.containsMouse ? Style.controlFillHover : Style.opaque(Style.cardBackground)
+                        border.color: Style.controlEdge
+                        border.width: 1
+
+                        Text {
+                            anchors.centerIn: parent
+                            anchors.verticalCenterOffset: root.expanded ? 1 : -1
+                            text: "\u203A"   // a single chevron, turned to point down (or up)
+                            rotation: root.expanded ? -90 : 90
+                            color: Style.foreground
+                            font.family: Style.fontFamily
+                            font.pointSize: Style.notifyFontSize
+                        }
+
+                        MouseArea {
+                            id: expanderArea
+                            anchors.fill: parent
+                            anchors.margins: -4
+                            hoverEnabled: true
+                            onClicked: root.expanded = !root.expanded
+                        }
+                    }
                 }
 
                 /* A pill, matching the queue-overflow row exactly. "More exists
