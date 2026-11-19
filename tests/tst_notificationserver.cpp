@@ -26,6 +26,7 @@
 
 #include <QDBusMetaType>
 #include <QImage>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 
 namespace
@@ -434,6 +435,18 @@ private Q_SLOTS:
         QCOMPARE(f.role(id, NotificationModel::ActionsRole).toList().first().toMap()
                      .value(QStringLiteral("label")).toString(), QStringLiteral("Join: Board review"));
         QCOMPARE(h.data(HistoryModel::BodyRole).toString(), QStringLiteral("secret agenda"));
+    }
+
+    /* An empty notification is dropped, but the sender is still told it
+       closed; the portal side forgets its entry on that same signal. */
+    void anEmptyNotificationIsClosedNotForgotten()
+    {
+        Fixture f;
+        QSignalSpy closed(&f.model, &NotificationModel::notificationClosed);
+        const uint id = f.notify(QString(), {}, {}, {}, 0, QString());
+        QCOMPARE(f.model.rowCount(), 0);
+        QCOMPARE(closed.size(), 1);
+        QCOMPARE(closed.first().first().toUInt(), id);
     }
 
     /* body-images is not advertised; an <img> made the daemon fetch URLs and

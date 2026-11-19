@@ -402,9 +402,13 @@ uint NotificationServer::deliver(Notification &n)
     }
 
     /* The spec has no opinion here, but an empty message is not worth a
-       popup; dunst drops these too. */
+       popup; dunst drops these too. Dropped through the model, as a rule's
+       no-popup is, so the sender is told it closed: returning quietly left
+       a Notify caller waiting on a NotificationClosed that never came, and
+       a portal notification's entry in PortalServer was never forgotten. */
     if (n.summary.isEmpty() && n.body.isEmpty()) {
-        return n.id;
+        n.skipDisplay = true;
+        return m_model->insert(n);
     }
 
     /* Recorded before the queue runs, so every member of a coalesced burst is
