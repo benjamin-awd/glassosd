@@ -122,6 +122,26 @@ QRegion roundedRegion(const QRect &r, int radius)
 Surface::Surface(QObject *parent)
     : QObject(parent)
 {
+    /* A surface pinned to an output that was unplugged falls back to the
+       active screen; nothing put it back when the output returned, so after
+       an undock and redock it stayed on the laptop panel until a settings
+       change or a restart (the same if the daemon started undocked). The
+       re-application goes through setOutput(), so a surface on screen still
+       finishes where it is and moves at its next showing. */
+    /* Queued: screenRemoved is emitted while the screen is still in
+       QGuiApplication::screens(). */
+    connect(qGuiApp, &QGuiApplication::screenAdded, this, &Surface::reapplyOutputs, Qt::QueuedConnection);
+    connect(qGuiApp, &QGuiApplication::screenRemoved, this, &Surface::reapplyOutputs, Qt::QueuedConnection);
+}
+
+void Surface::reapplyOutputs()
+{
+    const auto prefs = m_outputPreference;   // setOutput() writes to it
+    for (auto it = prefs.cbegin(); it != prefs.cend(); ++it) {
+        if (!it.value().isEmpty() && it.value() != QLatin1String("current")) {
+            setOutput(it.key(), it.value());
+        }
+    }
 }
 
 bool Surface::blurAvailable() const
@@ -354,6 +374,12 @@ void Surface::setOutput(QQuickWindow *window, const QString &preference)
     if (!window) {
         return;
     }
+    if (!m_outputPreference.contains(window)) {
+        connect(window, &QObject::destroyed, this, [this, window]() {
+            m_outputPreference.remove(window);
+        });
+    }
+    m_outputPreference.insert(window, preference);
 
     /* Only while hidden. Moving a mapped layer-shell surface to another
        screen means destroying its wl_surface and making a new one, so a

@@ -482,6 +482,20 @@ private Q_SLOTS:
         QTRY_COMPARE(surface->property("inputHolders").toList().size(), 0);
     }
 
+    /* The compositor closes a layer surface whose output goes away, and
+       layer-shell-qt closes the window. A card that never expires stayed
+       invisible until the next notification; the stack shows itself again. */
+    void aStackClosedFromOutsideComesBack()
+    {
+        m_model->insert(note(QStringLiteral("critical, never expires")));
+        QTRY_COMPARE(cards().size(), 1);
+        QTRY_VERIFY(m_win->isVisible());
+        m_win->close();
+        QVERIFY(!m_win->isVisible());
+        QTRY_VERIFY_WITH_TIMEOUT(m_win->isVisible(), 2000);
+        QCOMPARE(cards().size(), 1);
+    }
+
     /* e099271: a settings change re-sends the position. With a sliding theme
        the right margin is folded into the layout, and passing it to the
        layer shell as well pushed the surface inward on every change. */

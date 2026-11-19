@@ -54,7 +54,8 @@ Window {
     height: Math.max(1, Math.min(maxH, heldHeight))
     onNeededHeightChanged: if (neededHeight > heldHeight) heldHeight = neededHeight
 
-    visible: Modules.notifications && (list.count > 0 || NotificationModel.hiddenCount > 0)
+    readonly property bool wanted: Modules.notifications && (list.count > 0 || NotificationModel.hiddenCount > 0)
+    visible: wanted
 
     /* Whether a frame has been presented since the window was last mapped.
        The first card of a quiet spell creates the surface, and its blur
@@ -65,6 +66,14 @@ Window {
     /* Bumped whenever a card's slot moves, so the cards below re-read it. */
     property int collapseRev: 0
     onVisibleChanged: {
+        /* Closed from outside: the compositor closes a layer surface whose
+           output goes away (an undock), and layer-shell-qt then closes the
+           window. The binding above does not re-evaluate until a card comes
+           or goes, so a card that never expires (critical, timeout 0) stayed
+           invisible until the next notification. Shown again, it opens on a
+           screen that still exists. */
+        if (!visible && wanted)
+            Qt.callLater(() => { if (win.wanted && !win.visible) win.show() })
         exposed = false
         heldHeight = visible ? neededHeight : 1
     }

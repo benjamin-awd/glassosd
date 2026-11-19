@@ -181,6 +181,10 @@ private:
         QMetaObject::Connection onDestroyed;
     };
     QHash<QQuickWindow *, PendingOutput> m_pendingOutput;
+    /* What each window was last asked for, so a pinned output can be
+       re-applied when screens come and go. */
+    QHash<QQuickWindow *, QString> m_outputPreference;
+    void reapplyOutputs();
 
     struct Contribution {
         QRectF rect;

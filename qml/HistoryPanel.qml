@@ -102,6 +102,12 @@ Window {
     }
 
     onVisibleChanged: {
+        /* Closed from outside (its output was unplugged, and layer-shell-qt
+           closes the window when the compositor closes the surface): put the
+           model in step, or panelOpen stayed true behind a hidden window and
+           the next toggle "closed" it, so it took two to open the centre. */
+        if (!visible && HistoryModel.panelOpen)
+            HistoryModel.panelOpen = false
         Surface.setKeyboardFocus(win, visible)
         /* wpctl and brightnessctl are only queried while the centre is open;
            polling them for a panel nobody is looking at is waste.
