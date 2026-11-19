@@ -109,6 +109,8 @@ Window {
         if (!visible && HistoryModel.panelOpen)
             HistoryModel.panelOpen = false
         Surface.setKeyboardFocus(win, visible)
+        if (visible)
+            panel.focusStart()
         /* wpctl and brightnessctl are only queried while the centre is open;
            polling them for a panel nobody is looking at is waste.
 
@@ -142,7 +144,50 @@ Window {
 
         Component.onCompleted: refreshBlur()
 
-        Keys.onEscapePressed: HistoryModel.panelOpen = false
+        /* Keyboard. The surface has had keyboard interactivity while open
+           for a long time, but nothing inside it ever held focus: Esc was
+           attached here, to a panel nothing focused, so it only worked once
+           the search field had been clicked, and typing went nowhere.
+
+           The search field and the list each register themselves here when
+           their widget is built. They live in separate Loaders, so neither
+           can name the other by id, and either may be left out of
+           [Appearance] Widgets altogether — every path below has to cope
+           with one or both being null. */
+        property Item searchField: null
+        property Item listView: null
+
+        /* On opening, focus goes to the search field so that typing searches
+           straight away — the way a launcher or a Spotlight-style panel
+           behaves. Without a search widget the list takes it, and without
+           either the panel does, so Esc still closes. */
+        function focusStart() {
+            if (searchField) searchField.forceActiveFocus()
+            else if (listView) listView.forceActiveFocus()
+            else panel.forceActiveFocus()
+        }
+
+        /* Esc peels one layer at a time: a search first, then the centre.
+           Closing on the first press would throw away a half-typed search
+           along with the panel, which is rarely what the press meant.
+
+           Attached to the panel rather than to each control, because a key
+           nothing accepts travels up through its parents — so this one
+           handler is reached from the field, the list or anywhere else
+           focus ends up inside the centre. The field's own text is checked
+           as well as the model's: the model trims, so a field holding only
+           spaces would otherwise close the centre with the spaces still in
+           it. */
+        function handleEscape() {
+            if (searchField && searchField.text !== "")
+                searchField.text = ""
+            else if (HistoryModel.search !== "")
+                HistoryModel.search = ""
+            else
+                HistoryModel.panelOpen = false
+        }
+
+        Keys.onEscapePressed: panel.handleEscape()
 
         MouseArea { anchors.fill: parent; onClicked: {} }
 
@@ -398,10 +443,20 @@ Window {
                        that — glassosdctl search — has already fired its signal
                        by the time this field exists. Without seeding it the
                        list came up filtered while the box sat empty. */
-                    Component.onCompleted: text = HistoryModel.search
-                    Keys.onEscapePressed: {
-                        if (text !== "") text = ""
-                        else HistoryModel.panelOpen = false
+                    Component.onCompleted: {
+                        text = HistoryModel.search
+                        panel.searchField = searchInput
+                    }
+                    Component.onDestruction: {
+                        if (panel.searchField === searchInput) panel.searchField = null
+                    }
+                    Keys.onEscapePressed: panel.handleEscape()
+                    /* Down leaves the field for the list, the way it leaves a
+                       browser's address bar for its suggestions. Up does
+                       nothing here: there is nothing above the field to go
+                       to. */
+                    Keys.onDownPressed: (event) => {
+                        event.accepted = panel.listView !== null && panel.listView.enterFromTop()
                     }
 
                     Text {
@@ -611,6 +666,220 @@ Window {
                             target: HistoryModel
                             function onPanelOpenChanged() {
                                 if (HistoryModel.panelOpen) { list.jumpToNewest(); settle.restart() }
+                                /* Every opening starts from the search field
+                                   with nothing highlighted, rather than
+                                   resuming a position in a list that has
+                                   since been rebuilt. */
+                                list.setCursor(-1)
+                                list.keyNav = false
+                            }
+                            function onChanged() { list.relocate() }
+                        }
+
+                        Component.onCompleted: panel.listView = list
+                        Component.onDestruction: {
+                            if (panel.listView === list) panel.listView = null
+                        }
+
+                        // ---- keyboard navigation ----------------------------
+                        /* The row the keyboard is on, and whether to draw it.
+
+                           Our own property rather than ListView.currentIndex.
+                           The model resets on every rebuild — each arriving
+                           notification, each search keystroke, each collapse —
+                           and what the view does with currentIndex across a
+                           reset is its business, not ours: we need the
+                           highlight to stay on the same *notification*, which
+                           a row number cannot express. cursorKey is that
+                           identity, and relocate() finds it again.
+
+                           keyNav keeps the highlight out of the way of anyone
+                           using the mouse alone. It comes on with the first
+                           navigation key and goes off when the pointer next
+                           moves over the list; hover already shows where the
+                           mouse is, and two highlights on two different rows
+                           would leave you guessing which one Return acts on. */
+                        property int cursor: -1
+                        property var cursorKey: null
+                        property bool keyNav: false
+                        /* Up and Down are ours; the view's own handling would
+                           move currentIndex underneath us to no visible
+                           effect. */
+                        keyNavigationEnabled: false
+
+                        function setCursor(row) {
+                            cursor = row
+                            cursorKey = row < 0 ? null : HistoryModel.rowInfo(row)
+                            if (row < 0)
+                                return
+                            /* A wheel animation still running would carry the
+                               list straight back past the row just brought
+                               into view. */
+                            scrollAnim.stop()
+                            positionViewAtIndex(row, ListView.Contain)
+                        }
+
+                        /* From the search field into the list. False when
+                           there is nothing to move to, so the field keeps the
+                           key (and the focus). */
+                        function enterFromTop() {
+                            if (count === 0)
+                                return false
+                            keyNav = true
+                            forceActiveFocus()
+                            setCursor(0)
+                            return true
+                        }
+
+                        /* After a rebuild: back onto the same header or the
+                           same entry wherever it now sits. If it has gone —
+                           deleted, or no longer matching the search — the row
+                           that moved up into its place takes over, which is
+                           what makes pressing Delete repeatedly work through a
+                           list. If the list is now empty there is nothing to
+                           be on, and focus goes back to the field. */
+                        function relocate() {
+                            if (cursor < 0 || !cursorKey)
+                                return
+                            for (let r = 0; r < count; ++r) {
+                                const i = HistoryModel.rowInfo(r)
+                                if (i.isHeader === cursorKey.isHeader
+                                        && (i.isHeader ? i.groupKey === cursorKey.groupKey
+                                                       : i.id === cursorKey.id)) {
+                                    setCursor(r)
+                                    return
+                                }
+                            }
+                            if (count > 0) {
+                                setCursor(Math.min(cursor, count - 1))
+                                return
+                            }
+                            setCursor(-1)
+                            if (activeFocus && panel.searchField)
+                                panel.searchField.forceActiveFocus()
+                        }
+
+                        /* The header a row belongs to, or -1 for an entry
+                           that has none (a group of one is drawn without a
+                           header). Entries follow their own header directly,
+                           so the first header found walking up is either
+                           theirs or some other group's. */
+                        function headerRowFor(row) {
+                            const key = HistoryModel.rowInfo(row).groupKey
+                            for (let r = row; r >= 0; --r) {
+                                const i = HistoryModel.rowInfo(r)
+                                if (i.isHeader)
+                                    return i.groupKey === key ? r : -1
+                            }
+                            return -1
+                        }
+
+                        /* Left folds the group the cursor is in and Right
+                           unfolds it, from the header or from any of its
+                           entries — the tree-view convention, where you do not
+                           have to travel up to the parent first. Only ever
+                           towards the state asked for: toggleGroup on a group
+                           already that way would flip it back. Folding moves
+                           the cursor to the header, since the entry it was on
+                           may just have been folded away. */
+                        function setGroupCollapsed(collapse) {
+                            const h = headerRowFor(cursor)
+                            if (h < 0)
+                                return
+                            const info = HistoryModel.rowInfo(h)
+                            if (info.collapsed !== collapse)
+                                HistoryModel.toggleGroup(info.groupKey)
+                            if (collapse)
+                                setCursor(h)
+                        }
+
+                        Keys.onPressed: (event) => {
+                            const mods = event.modifiers & (Qt.ControlModifier | Qt.AltModifier
+                                                            | Qt.MetaModifier)
+                            if (mods) {
+                                event.accepted = false
+                                return
+                            }
+                            switch (event.key) {
+                            case Qt.Key_Down:
+                                keyNav = true
+                                setCursor(Math.min(cursor + 1, count - 1))
+                                break
+                            case Qt.Key_Up:
+                                keyNav = true
+                                if (cursor <= 0 && panel.searchField) {
+                                    setCursor(-1)
+                                    panel.searchField.forceActiveFocus()
+                                } else if (count > 0) {
+                                    setCursor(Math.max(cursor - 1, 0))
+                                }
+                                break
+                            case Qt.Key_Left:
+                            case Qt.Key_Right:
+                                keyNav = true
+                                if (cursor >= 0)
+                                    setGroupCollapsed(event.key === Qt.Key_Left)
+                                break
+                            case Qt.Key_Return:
+                            case Qt.Key_Enter:
+                                keyNav = true
+                                if (cursor < 0)
+                                    break
+                                if (cursorKey.isHeader) {
+                                    HistoryModel.toggleGroup(cursorKey.groupKey)
+                                } else {
+                                    /* What a click does, close included: the
+                                       centre is in the way of the window that
+                                       activating an entry brings up. */
+                                    HistoryModel.activateEntry(cursor)
+                                    HistoryModel.panelOpen = false
+                                }
+                                break
+                            case Qt.Key_Delete:
+                            case Qt.Key_Backspace:
+                                keyNav = true
+                                /* removeAt ignores a header, and should: a
+                                   header's own clear button empties the whole
+                                   group, which is too much to do on a key
+                                   pressed while passing over it. */
+                                if (cursor >= 0)
+                                    HistoryModel.removeAt(cursor)
+                                break
+                            default:
+                                /* Typing while on the list goes to the search,
+                                   so nobody has to go back up to the field to
+                                   start a new one. Control characters (Tab,
+                                   Esc) are left alone to travel on. */
+                                if (panel.searchField && event.text.length > 0
+                                        && event.text.charCodeAt(0) >= 32
+                                        && event.text.charCodeAt(0) !== 127) {
+                                    setCursor(-1)
+                                    panel.searchField.forceActiveFocus()
+                                    panel.searchField.insert(panel.searchField.cursorPosition,
+                                                             event.text)
+                                    break
+                                }
+                                event.accepted = false
+                                return
+                            }
+                            event.accepted = true
+                        }
+
+                        /* Moving the mouse over the list hands control back to
+                           it. Compared against the last position rather than
+                           taken on any hover update, because scrolling the
+                           list under a pointer that has not moved also
+                           delivers hover — and that is the keyboard's own
+                           scrolling, not the mouse taking over. */
+                        HoverHandler {
+                            property point last: Qt.point(-1, -1)
+                            onPointChanged: {
+                                const p = point.scenePosition
+                                if (p.x !== last.x || p.y !== last.y) {
+                                    if (last.x >= 0)
+                                        list.keyNav = false
+                                    last = p
+                                }
                             }
                         }
                         Layout.fillWidth: true
@@ -750,6 +1019,25 @@ Window {
                                 Item {
                                     width: parent ? parent.width : 0
                                     height: 30
+                                    readonly property bool current:
+                                        list.keyNav && list.activeFocus && list.cursor === index
+
+                                    /* The keyboard highlight. A header has no
+                                       card of its own to colour, so it gets
+                                       the hovered card's fill and the same
+                                       accent hairline the entries use — one
+                                       look for "the keyboard is here",
+                                       whichever kind of row it is on. */
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        radius: Style.cardRadius - 2
+                                        color: Style.entryCardHover
+                                        border.width: 1
+                                        border.color: Qt.rgba(Style.accent.r, Style.accent.g,
+                                                              Style.accent.b, 0.55)
+                                        opacity: parent.current ? 1 : 0
+                                        Behavior on opacity { NumberAnimation { duration: 110 } }
+                                    }
 
                                     RowLayout {
                                         anchors.fill: parent
@@ -839,6 +1127,7 @@ Window {
                             Component {
                                 id: entryCard
                                 Rectangle {
+                                    id: entryCardRoot
                                     width: parent ? parent.width : 0
                                     /* Style.padding, not a hardcoded 20. The
                                        entries were noticeably tighter than the
@@ -848,11 +1137,22 @@ Window {
                                        with anything while the text did. */
                                     height: entryBody.implicitHeight + Style.padding * 2
                                     radius: Style.cardRadius - 2
-                                    color: entryHover.containsMouse
+                                    /* The keyboard highlight is the hover
+                                       look plus an accent hairline: the fill
+                                       alone is too faint to find again after
+                                       looking away, and a full accent ring
+                                       would shout on a panel where nothing
+                                       else does. */
+                                    readonly property bool current:
+                                        list.keyNav && list.activeFocus && list.cursor === index
+                                    color: entryHover.containsMouse || current
                                            ? Style.entryCardHover : Style.entryCard
-                                    border.color: Style.entryCardEdge
+                                    border.color: current ? Qt.rgba(Style.accent.r, Style.accent.g,
+                                                                    Style.accent.b, 0.55)
+                                                          : Style.entryCardEdge
                                     border.width: 1
                                     Behavior on color { ColorAnimation { duration: 110 } }
+                                    Behavior on border.color { ColorAnimation { duration: 110 } }
 
                                     MouseArea {
                                         id: entryHover
@@ -965,7 +1265,10 @@ Window {
 
                                             CardButton {
                                                 Layout.alignment: Qt.AlignRight
-                                                opacity: entryHover.containsMouse ? 1 : 0
+                                                /* Shown on the keyboard's row too, as
+                                                   the hint that Delete does what it
+                                                   does. */
+                                                opacity: entryHover.containsMouse || entryCardRoot.current ? 1 : 0
                                                 Behavior on opacity { NumberAnimation { duration: 110 } }
                                                 icon: "close"
                                                 onActivated: HistoryModel.removeAt(index)

@@ -1,0 +1,20 @@
+# SPDX-FileCopyrightText: 2026 glassosd contributors
+# SPDX-License-Identifier: GPL-2.0-or-later
+# The notification centre beside the same stand-ins the stack uses, less the
+# HistoryModel one: the centre is a view of the real HistoryModel, which
+# tst_historypanel registers from C++. Assembled by tests/CMakeLists.txt.
+module org.glassosd.ui
+singleton Style 1.0 Style.qml
+singleton Icons 1.0 Icons.qml
+singleton Surface 1.0 Surface.qml
+singleton Appearance 1.0 Appearance.qml
+singleton Modules 1.0 Modules.qml
+singleton Theme 1.0 Theme.qml
+singleton SystemControls 1.0 SystemControls.qml
+HistoryPanel 1.0 HistoryPanel.qml
+GlassPanel 1.0 GlassPanel.qml
+CardButton 1.0 CardButton.qml
+PanelButton 1.0 PanelButton.qml
+Toggle 1.0 Toggle.qml
+SliderRow 1.0 SliderRow.qml
+ButtonsGrid 1.0 ButtonsGrid.qml

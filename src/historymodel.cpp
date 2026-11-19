@@ -733,6 +733,20 @@ void HistoryModel::activateEntry(int row)
     Q_EMIT entryActivated(n.id, n.desktopEntry);
 }
 
+QVariantMap HistoryModel::rowInfo(int row) const
+{
+    if (row < 0 || row >= m_rows.size()) {
+        return {};
+    }
+    const Row &r = m_rows.at(row);
+    return QVariantMap{
+        {QStringLiteral("isHeader"), r.header},
+        {QStringLiteral("groupKey"), r.groupKey},
+        {QStringLiteral("collapsed"), r.collapsed},
+        {QStringLiteral("id"), r.header ? 0u : r.entry.id},
+    };
+}
+
 void HistoryModel::toggleGroup(const QString &key)
 {
     int count = 0;

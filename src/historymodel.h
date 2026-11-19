@@ -151,6 +151,14 @@ public:
     /* Clicking one of those rows: as activateEntry(), by id. */
     Q_INVOKABLE void activateId(uint id);
 
+    /* What the centre's keyboard navigation needs to know about one row:
+       isHeader, groupKey, collapsed and (for an entry) id. A delegate
+       already has all of this through its roles, but the row being moved to
+       may be scrolled out of view and so have no delegate to ask. The id is
+       what lets the highlight follow the same entry across a rebuild, which
+       renumbers every row each time a notification arrives. */
+    Q_INVOKABLE QVariantMap rowInfo(int row) const;
+
     Q_INVOKABLE void toggleGroup(const QString &key);
     Q_INVOKABLE void clearGroup(const QString &key);
     void setAutoCollapseOver(int n) { m_autoCollapseOver = qMax(0, n); rebuild(); }

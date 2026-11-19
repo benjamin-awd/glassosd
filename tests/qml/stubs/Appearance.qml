@@ -21,4 +21,10 @@ QtObject {
     property int fontSize: 0
     property var notifyHeader: ["icon", "time"]
     property string iconStyle: "builtin"
+    // The centre's. Only the widgets tst_historypanel exercises: the others
+    // would each need a stand-in for a singleton the test has no use for.
+    property string centreOutput: ""
+    property int centreSide: 8             // Right
+    property int centreBodyLines: 3
+    property var widgets: ["title", "search", "notifications"]
 }

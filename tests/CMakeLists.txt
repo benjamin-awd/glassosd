@@ -155,3 +155,46 @@ glassosd_test(tst_notificationstack
 add_dependencies(tst_notificationstack glassosd_qml_test_module)
 target_compile_definitions(tst_notificationstack PRIVATE
     GLASSOSD_QML_TEST_IMPORTS="${CMAKE_CURRENT_BINARY_DIR}/qmlimports")
+
+# The notification centre gets a module directory of its own. It is a view of
+# the real HistoryModel, which the test registers from C++ — and a C++
+# singleton cannot share a module with the qmldir singleton of the same name
+# that the stack's stubs declare. So: the same stubs less that one, the
+# centre's extra stand-ins from tests/qml/centre, and that directory's qmldir.
+set(GLASSOSD_CENTRE_TEST_MODULE ${CMAKE_CURRENT_BINARY_DIR}/qmlimports-centre/org/glassosd/ui)
+set(GLASSOSD_CENTRE_QML_UNDER_TEST
+    HistoryPanel.qml GlassPanel.qml CardButton.qml PanelButton.qml Toggle.qml
+    SliderRow.qml ButtonsGrid.qml Style.qml Icons.qml)
+set(_centre_copy_cmds)
+foreach(f IN LISTS GLASSOSD_CENTRE_QML_UNDER_TEST)
+    list(APPEND _centre_copy_cmds COMMAND ${CMAKE_COMMAND} -E copy_if_different
+         ${CMAKE_SOURCE_DIR}/qml/${f} ${GLASSOSD_CENTRE_TEST_MODULE}/${f})
+endforeach()
+foreach(f IN LISTS _qml_stubs)
+    get_filename_component(n ${f} NAME)
+    if(n STREQUAL "qmldir" OR n STREQUAL "HistoryModel.qml")
+        continue()
+    endif()
+    list(APPEND _centre_copy_cmds COMMAND ${CMAKE_COMMAND} -E copy_if_different
+         ${f} ${GLASSOSD_CENTRE_TEST_MODULE}/${n})
+endforeach()
+file(GLOB _centre_stubs ${CMAKE_CURRENT_SOURCE_DIR}/qml/centre/*)
+foreach(f IN LISTS _centre_stubs)
+    get_filename_component(n ${f} NAME)
+    list(APPEND _centre_copy_cmds COMMAND ${CMAKE_COMMAND} -E copy_if_different
+         ${f} ${GLASSOSD_CENTRE_TEST_MODULE}/${n})
+endforeach()
+add_custom_target(glassosd_centre_test_module ALL
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${GLASSOSD_CENTRE_TEST_MODULE}
+    ${_centre_copy_cmds}
+    COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
+            ${CMAKE_SOURCE_DIR}/qml/icons ${GLASSOSD_CENTRE_TEST_MODULE}/icons
+    COMMENT "Assembling the centre's QML test module"
+    VERBATIM)
+
+glassosd_test(tst_historypanel
+    SOURCES historymodel.cpp notification.cpp
+    LIBS Qt6::Qml Qt6::Quick KF6::ConfigCore)
+add_dependencies(tst_historypanel glassosd_centre_test_module)
+target_compile_definitions(tst_historypanel PRIVATE
+    GLASSOSD_QML_TEST_IMPORTS="${CMAKE_CURRENT_BINARY_DIR}/qmlimports-centre")
