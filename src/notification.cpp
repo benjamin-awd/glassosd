@@ -32,15 +32,15 @@ QImage ImageData::toImage() const
     return QImage(reinterpret_cast<const uchar *>(data.constData()), width, height, rowstride, fmt).copy();
 }
 
-ImageData ImageData::fromImage(QImage img)
+ImageData ImageData::fromImage(QImage img, int maxEdge)
 {
     if (img.isNull()) {
         return {};
     }
-    if (img.width() > maxStoredEdge || img.height() > maxStoredEdge) {
+    if (img.width() > maxEdge || img.height() > maxEdge) {
         /* At least a pixel each way: a 1x5000 strip would otherwise round
            to nothing. */
-        const QSize fit = img.size().scaled(maxStoredEdge, maxStoredEdge, Qt::KeepAspectRatio).expandedTo(QSize(1, 1));
+        const QSize fit = img.size().scaled(maxEdge, maxEdge, Qt::KeepAspectRatio).expandedTo(QSize(1, 1));
         img = img.scaled(fit, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
     }
     img = img.convertToFormat(QImage::Format_RGBA8888);

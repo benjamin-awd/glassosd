@@ -40,7 +40,7 @@ glassosd_test(tst_soundplayer
     SOURCES soundplayer.cpp)
 
 glassosd_test(tst_historymodel
-    SOURCES historymodel.cpp
+    SOURCES historymodel.cpp notification.cpp
     LIBS Qt6::Qml KF6::ConfigCore)
 
 glassosd_test(tst_notificationmodel

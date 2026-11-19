@@ -278,6 +278,13 @@ void HistoryModel::record(const Notification &n)
     if (n.historyIgnore) {
         return;
     }
+    if (n.image.isValid()
+        && (n.image.width > ImageData::maxHistoryEdge || n.image.height > ImageData::maxHistoryEdge)) {
+        Notification smaller = n;
+        smaller.image = ImageData::fromImage(n.image.toImage(), ImageData::maxHistoryEdge);
+        record(smaller);
+        return;
+    }
 
     /* Not counted while the centre is open — you are looking at it. */
     if (!m_panelOpen) {

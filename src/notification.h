@@ -36,6 +36,11 @@ struct ImageData {
        size, and the model and history each hold a copy of every one, so
        full-resolution copies are how a few large images become a gigabyte. */
     static constexpr int maxStoredEdge = 512;
+    /* Largest edge history keeps. The centre draws an entry's picture at
+       icon size (~40 logical px, 80 device px at 2x), and history holds up
+       to HistoryLength of them for the whole session: 200 images at 512^2
+       RGBA is ~200 MB, at 128^2 ~13 MB. */
+    static constexpr int maxHistoryEdge = 128;
 
     /* Whether the header describes pixels the buffer actually holds, in a
        layout the renderer can draw: 8-bit RGB or RGBA, rows no shorter than
@@ -67,7 +72,7 @@ struct ImageData {
     /* A deep copy of the pixels, or a null image if isValid() is false. */
     QImage toImage() const;
     /* An image as image-data, scaled down to maxStoredEdge if larger. */
-    static ImageData fromImage(QImage img);
+    static ImageData fromImage(QImage img, int maxEdge = maxStoredEdge);
 };
 Q_DECLARE_METATYPE(ImageData)
 

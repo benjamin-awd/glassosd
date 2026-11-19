@@ -101,6 +101,25 @@ private Q_SLOTS:
        had already been cut short. Raising HistoryLength therefore worked for
        the session and silently lost everything past 200 on the next start,
        while glassosdctl went on reporting the larger number. */
+    /* History keeps a picture at the size the centre draws it, not the
+       512px the popup copy is allowed: 200 entries at 512^2 RGBA was a
+       ~200 MB ceiling for one session. */
+    void historyKeepsImagesSmall()
+    {
+        clearStore();
+        HistoryModel h;
+        Notification n = note(QStringLiteral("App"), QStringLiteral("photo"));
+        QImage big(512, 384, QImage::Format_RGBA8888);
+        big.fill(Qt::blue);
+        n.image = ImageData::fromImage(big);
+        QCOMPARE(n.image.width, 512);
+        h.record(n);
+        const ImageData kept = h.imageFor(n.id);
+        QVERIFY(kept.isValid());
+        QCOMPARE(kept.width, ImageData::maxHistoryEdge);
+        QCOMPARE(kept.height, ImageData::maxHistoryEdge * 3 / 4);
+    }
+
     void capacityIsReadBeforeLoading()
     {
         setHistoryLength(250);
