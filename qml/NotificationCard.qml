@@ -638,6 +638,32 @@ Item {
             acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
             enabled: !replyInput.activeFocus && !swipe.active
             property bool gesturing: false
+            /* Recent (time, dx) pairs, for the release velocity. A wheel
+               gesture has no handler velocity to read, so it was always
+               released at 0 and a quick two-finger flick had to travel the
+               whole commit distance to dismiss. */
+            property var samples: []
+            function velocity() {
+                if (samples.length < 2)
+                    return 0
+                const last = samples[samples.length - 1].t
+                let sum = 0
+                let first = last
+                for (let i = samples.length - 1; i >= 0 && last - samples[i].t <= 100; --i) {
+                    sum += samples[i].dx
+                    first = samples[i].t
+                }
+                /* One event's worth of time beyond the span, so two events
+                   a millisecond apart do not read as a huge speed. */
+                const span = (last - first) + 8
+                return sum / span * 1000
+            }
+            function release() {
+                gesturing = false
+                root.releaseVelocity = velocity()
+                samples = []
+                root.endSwipe()
+            }
 
             onWheel: (event) => {
                 const dx = event.pixelDelta.x !== 0 ? event.pixelDelta.x
@@ -666,13 +692,18 @@ Item {
                 }
                 if (!gesturing) {
                     gesturing = true
+                    samples = []
                     root.hoverChanged(true)
                 }
                 root.swipeRaw += dx
+                if (dx !== 0) {
+                    const now = Date.now()
+                    samples.push({ t: now, dx: dx })
+                    while (samples.length > 0 && now - samples[0].t > 200)
+                        samples.shift()
+                }
                 if (ending) {
-                    gesturing = false
-                    root.releaseVelocity = 0
-                    root.endSwipe()
+                    release()
                 } else {
                     idle.restart()
                 }
@@ -687,11 +718,7 @@ Item {
         Timer {
             id: idle
             interval: 120
-            onTriggered: if (flick.gesturing) {
-                flick.gesturing = false
-                root.releaseVelocity = 0
-                root.endSwipe()
-            }
+            onTriggered: if (flick.gesturing) flick.release()
         }
 
         DragHandler {

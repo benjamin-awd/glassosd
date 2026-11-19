@@ -24,6 +24,7 @@
 #include <QQmlApplicationEngine>
 #include <QQuickItem>
 #include <QQuickWindow>
+#include <QWheelEvent>
 #include <QtTest>
 
 #include <QPointer>
@@ -400,6 +401,60 @@ private Q_SLOTS:
         disconnect(conn);
         QVERIFY2(lastLeft >= m_win->width(),
                  qPrintable(QStringLiteral("last drawn at x=%1 in a %2px window").arg(lastLeft).arg(m_win->width())));
+    }
+
+    /* A two-finger trackpad flick arrives as phased horizontal wheel events
+       and has no handler velocity. It was released at 0, so a quick flick
+       had to travel the whole commit distance; now its speed counts. */
+    void aQuickTrackpadFlickDismisses()
+    {
+        m_model->insert(note(QStringLiteral("flicked")));
+        QTRY_COMPARE(cards().size(), 1);
+        waitSettled();
+        QQuickItem *card = cards().constFirst();
+        const qreal commit = card->width() * 0.28;
+        const QPointF at = drawn(card).center();
+        auto wheel = [&](int dx, Qt::ScrollPhase phase) {
+            QWheelEvent e(at, m_win->mapToGlobal(at), QPoint(dx, 0), QPoint(dx * 8, 0),
+                          Qt::NoButton, Qt::NoModifier, phase, false);
+            QCoreApplication::sendEvent(m_win, &e);
+        };
+        wheel(0, Qt::ScrollBegin);
+        int travelled = 0;
+        for (int i = 0; i < 8; ++i) {           // 80px in ~64ms: ~1250 px/s
+            wheel(10, Qt::ScrollUpdate);
+            travelled += 10;
+            QTest::qWait(8);
+        }
+        QVERIFY(travelled < commit);            // distance alone would not do it
+        wheel(0, Qt::ScrollEnd);
+        QVERIFY2(card->property("releaseVelocity").toReal() > 600,
+                 qPrintable(QStringLiteral("released at %1 px/s").arg(card->property("releaseVelocity").toReal())));
+        QTRY_COMPARE_WITH_TIMEOUT(cards().size(), 0, 2000);
+    }
+
+    /* The same distance dragged out slowly is not a flick, and springs back. */
+    void aSlowTrackpadSwipeSpringsBack()
+    {
+        m_model->insert(note(QStringLiteral("kept")));
+        QTRY_COMPARE(cards().size(), 1);
+        waitSettled();
+        QQuickItem *card = cards().constFirst();
+        const QPointF at = drawn(card).center();
+        auto wheel = [&](int dx, Qt::ScrollPhase phase) {
+            QWheelEvent e(at, m_win->mapToGlobal(at), QPoint(dx, 0), QPoint(dx * 8, 0),
+                          Qt::NoButton, Qt::NoModifier, phase, false);
+            QCoreApplication::sendEvent(m_win, &e);
+        };
+        wheel(0, Qt::ScrollBegin);
+        for (int i = 0; i < 8; ++i) {           // 80px over ~400ms: ~200 px/s
+            wheel(10, Qt::ScrollUpdate);
+            QTest::qWait(50);
+        }
+        wheel(0, Qt::ScrollEnd);
+        QTest::qWait(400);
+        QCOMPARE(cards().size(), 1);
+        QCOMPARE(m_model->rowCount(), 1);
     }
 
     /* e099271: a settings change re-sends the position. With a sliding theme
