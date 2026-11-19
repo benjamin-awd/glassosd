@@ -736,7 +736,7 @@ SNZ
     # The popups' top row. Named apart from `widgets` because that one is the
     # centre — a reporter read Widgets= as covering both, which is a fair
     # reading of the name.
-    known="icon appname time snooze settings close"
+    known="icon appname time"
     case "${1:-}" in
       "")
         cur=$(cfg_read Appearance NotifyHeader)

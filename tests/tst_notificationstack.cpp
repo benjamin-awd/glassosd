@@ -481,9 +481,23 @@ private Q_SLOTS:
     /* The close button straddles the card's top-left corner. Its outer half
        was outside the input region, and it hid as soon as the pointer left
        the card for that half. */
+    /* A theme's slide distance is a floor: the card always travels at least
+       its own width plus the margin, so it starts and ends past the screen
+       edge whatever NotifyScale makes of the width. */
+    void theSlideClearsTheScreenEdge()
+    {
+        setTheme({{QStringLiteral("motion.in"), 120}, {QStringLiteral("motion.out"), 80},
+                  {QStringLiteral("motion.slideTravel"), 100}});
+        QObject *style = singleton("Style");
+        QVERIFY(style->property("slideTravel").toInt() >= style->property("notifyWidth").toInt());
+        setTheme({{QStringLiteral("motion.in"), 120}, {QStringLiteral("motion.out"), 80}});
+        QCOMPARE(style->property("slideTravel").toInt(), 0);   // 0 still means no slide
+    }
+
     void closeButtonStaysReachableOffTheCardEdge()
     {
-        singleton("Appearance")->setProperty("notifyHeader", QStringList{QStringLiteral("icon"), QStringLiteral("time"), QStringLiteral("close")});
+        /* No `close` in the header: the button is offered regardless. */
+        singleton("Appearance")->setProperty("notifyHeader", QStringList{QStringLiteral("icon"), QStringLiteral("time")});
         m_model->insert(note(QStringLiteral("closable")));
         QTRY_COMPARE(cards().size(), 1);
         waitSettled();

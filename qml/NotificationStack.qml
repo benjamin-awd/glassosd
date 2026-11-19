@@ -55,7 +55,16 @@ Window {
     readonly property real neededHeight: column.implicitHeight + Style.shadowPad * 2
     property real heldHeight: 1
     height: Math.max(1, Math.min(maxH, heldHeight))
-    onNeededHeightChanged: if (neededHeight > heldHeight) heldHeight = neededHeight
+    /* Grown in steps, not to the pixel. A group opening or a long body
+       expanding raises neededHeight on every frame of its animation, and
+       following it exactly resized the layer surface on each one: a new
+       buffer size and a configure round trip per frame, about 25 of them
+       for one open. Rounded up to the next step, the same open costs one or
+       two. The extra is transparent and outside the input region, like the
+       slack the surface already keeps once it has grown. */
+    readonly property int growStep: 256
+    onNeededHeightChanged: if (neededHeight > heldHeight)
+        heldHeight = Math.min(maxH, Math.ceil(neededHeight / growStep) * growStep)
 
     readonly property bool wanted: Modules.notifications && (list.count > 0 || NotificationModel.hiddenCount > 0)
     visible: wanted

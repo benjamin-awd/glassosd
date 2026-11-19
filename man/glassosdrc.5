@@ -198,17 +198,20 @@ next.
 What the top row of a notification popup contains, in order:
 .BR icon ,
 .BR appname ,
-.BR time ,
-.BR snooze ,
-.BR settings ,
-.BR close .
+.BR time .
 Unset means all of them. An empty value hides the row, leaving the summary and
 body alone \(em which is the setting for people who want the text and nothing
-else. Order is honoured, so it also moves the time or puts the close button
-first.
+else. Order is honoured, so it also moves the time. The close button is not
+part of it: it always appears on the card's corner on hover. Snooze and
+settings are in the card's Options menu;
+.BR snooze ,
+.B settings
+and
+.B close
+are accepted from older configurations and ignored.
 .PP
 .nf
-glassosdctl header appname,time,close
+glassosdctl header appname,time
 glassosdctl header none
 glassosdctl header default
 .fi

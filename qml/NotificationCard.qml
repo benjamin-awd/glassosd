@@ -1466,8 +1466,10 @@ Item {
     CardButton {
         id: closeButton
         icon: "close"
-        visible: Appearance.notifyHeader.includes("close")
-                 && !root.leaving
+        /* Always offered on hover, as macOS does. It used to need `close`
+           in NotifyHeader, so a header trimmed to icon,time (to drop the app
+           name) silently took the only visible way to dismiss with it. */
+        visible: !root.leaving
                  && (root.pointerOn || closeGrace.running)
         anchors.horizontalCenter: card.left
         anchors.verticalCenter: card.top

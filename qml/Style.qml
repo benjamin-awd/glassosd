@@ -404,7 +404,16 @@ QtObject {
     /* How far a card travels on arrival and on dismissal. 0 keeps the card
        where it is and lets the fade do the work, which is what a surface that
        stops short of the screen edge has to do. */
-    readonly property int slideTravel: Math.round(tnum("motion.slideTravel", 0))
+    /* A theme's value is a floor, not the distance: the card has to clear
+       the screen edge, which takes its own width plus the margin, and both of
+       those scale with NotifyScale while a theme's number does not. macos.json
+       says 362 (346 + 16 at scale 1); at NotifyScale=1.15 the card is 398
+       wide, so 362 started and ended it 52px inside the screen, fading there
+       instead of leaving. */
+    readonly property int slideTravel: {
+        const t = Math.round(tnum("motion.slideTravel", 0))
+        return t > 0 ? Math.max(t, notifyWidth + Appearance.notifyMarginX) : 0
+    }
 
     /* The reveal value at which a leaving card gives its blur region back.
        Compositor blur is binary, so whenever it is dropped the backdrop

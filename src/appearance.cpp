@@ -192,10 +192,12 @@ void Appearance::reload()
     /* The canonical order, and the default. Every widget the centre can draw
        appears here exactly once; the configured list is an ordering of these
        names, swaync-style. */
-    /* The popup's top row: app icon, app name, time, then the buttons.
-       Order is honoured, so this doubles as a way to move the time or put the
-       close button first. An empty value hides the row entirely, which is what
-       someone asking for "just the text" wants. */
+    /* The popup's top row: app icon, app name, time. Order is honoured.
+       An empty value hides the row entirely, which is what someone asking
+       for "just the text" wants. snooze, settings and close are still
+       accepted from older configs but do nothing: the first two moved into
+       the card's Options menu, and the close button now always appears on
+       hover. */
     static const QStringList headerParts{
         QStringLiteral("icon"),     QStringLiteral("appname"),
         QStringLiteral("time"),     QStringLiteral("snooze"),
