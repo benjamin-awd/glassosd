@@ -122,6 +122,21 @@ QVariant NotificationModel::data(const QModelIndex &index, int role) const
                 return senderLogo(n);
             case BadgeSourceRole:
                 return QString();
+            /* While sharing the screen the buttons stay (the person at the
+               keyboard can still act), but their labels and the reply
+               field's placeholder are the sender's text too: \"Reply to
+               Jane\", \"Join: Board review\". They read as generic. */
+            case ActionsRole: {
+                QVariantList out;
+                const QVariantList real = data(index, NotificationModel::RealActionsRole).toList();
+                for (int i = 0; i < real.size(); ++i) {
+                    QVariantMap a = real.at(i).toMap();
+                    a.insert(QStringLiteral("label"), real.size() == 1 ? tr("Action") : tr("Action %1").arg(i + 1));
+                    out << a;
+                }
+                return out;
+            }
+            case ReplyPlaceholderRole: return tr("Reply");
             default:          break;
             }
         }
@@ -151,6 +166,7 @@ QVariant NotificationModel::data(const QModelIndex &index, int role) const
     case SummaryRole:    return n.summary;
     case BodyRole:       return n.body;
     case UrgencyRole:    return static_cast<int>(n.urgency);
+    case RealActionsRole:
     case ActionsRole: {
         /* The wire format is a flat [key, label, key, label, ...] list. The
            "default" key is special: it is what activating the notification
@@ -1005,7 +1021,7 @@ void NotificationModel::setLockPrivacyDefault(Notification::LockPrivacy policy)
     m_lockDefault = policy;
     if (privacyActive() && !m_displayed.isEmpty()) {
         Q_EMIT dataChanged(index(0), index(m_displayed.size() - 1),
-                           {SummaryRole, BodyRole, IconSourceRole, BadgeSourceRole});
+                           {SummaryRole, BodyRole, IconSourceRole, BadgeSourceRole, ActionsRole, ReplyPlaceholderRole});
     }
 }
 
@@ -1041,7 +1057,7 @@ void NotificationModel::setScreenSharing(bool sharing)
     }
     if (!m_displayed.isEmpty()) {
         Q_EMIT dataChanged(index(0), index(m_displayed.size() - 1),
-                           {SummaryRole, BodyRole, IconSourceRole, BadgeSourceRole});
+                           {SummaryRole, BodyRole, IconSourceRole, BadgeSourceRole, ActionsRole, ReplyPlaceholderRole});
     }
 }
 

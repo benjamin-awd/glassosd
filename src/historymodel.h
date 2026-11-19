@@ -108,6 +108,12 @@ public:
     void load();
     void save() const;
     void setCapacity(int n);
+
+    /* While the screen is shared (and the share-private setting is on), the
+       centre masks entries the way the popups do: by each entry's own
+       lock-screen preference, or `fallback` for those without one. It showed
+       every body in full, on a screen someone else was watching. */
+    void setScreenSharing(bool sharing, Notification::LockPrivacy fallback);
     ImageData imageFor(uint id) const;
 
     Q_INVOKABLE void removeAt(int row);
@@ -174,6 +180,8 @@ private:
     QString storePath() const;
     mutable QTimer m_saveTimer;
     bool m_panelOpen = false;
+    bool m_sharing = false;
+    Notification::LockPrivacy m_sharingFallback = Notification::LockPrivacy::HideContent;
     bool m_newestFirst = true;
     bool m_appSettingsVisible = false;
     int m_unread = 0;

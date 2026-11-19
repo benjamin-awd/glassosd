@@ -398,6 +398,44 @@ private Q_SLOTS:
         QCOMPARE(QSet<uint>({a, m1, m2, b}).size(), 4);
     }
 
+    /* Sharing the screen: a hidden card's action labels and reply
+       placeholder are the sender's words too, and the centre showed every
+       body in full. */
+    void sharingHidesActionLabelsAndTheCentre()
+    {
+        Fixture f;
+        f.model.setLockPrivacyDefault(Notification::LockPrivacy::HideContent);
+        const uint id = f.notify(QStringLiteral("Board review"),
+                                 {{QStringLiteral("image-path"), QStringLiteral("/tmp/avatar.png")}},
+                                 QStringLiteral("org.example.Chat"),
+                                 {QStringLiteral("join"), QStringLiteral("Join: Board review")},
+                                 0, QStringLiteral("secret agenda"));
+        f.model.setScreenSharing(true);
+        f.history.setScreenSharing(true, f.model.lockPrivacyDefault());
+        const QVariantList acts = f.role(id, NotificationModel::ActionsRole).toList();
+        QCOMPARE(acts.size(), 1);
+        QCOMPARE(acts.first().toMap().value(QStringLiteral("key")).toString(), QStringLiteral("join"));
+        QVERIFY(!acts.first().toMap().value(QStringLiteral("label")).toString().contains(QLatin1String("Board")));
+
+        int row = -1;
+        for (int i = 0; i < f.history.rowCount(); ++i) {
+            if (f.history.index(i).data(HistoryModel::IdRole).toUInt() == id) {
+                row = i;
+            }
+        }
+        QVERIFY(row >= 0);
+        const QModelIndex h = f.history.index(row);
+        QCOMPARE(h.data(HistoryModel::BodyRole).toString(), QString());
+        QVERIFY(!h.data(HistoryModel::SummaryRole).toString().contains(QLatin1String("Board")));
+        QCOMPARE(h.data(HistoryModel::IconSourceRole).toString(), QStringLiteral("image://icon/org.example.Chat"));
+
+        f.model.setScreenSharing(false);
+        f.history.setScreenSharing(false, f.model.lockPrivacyDefault());
+        QCOMPARE(f.role(id, NotificationModel::ActionsRole).toList().first().toMap()
+                     .value(QStringLiteral("label")).toString(), QStringLiteral("Join: Board review"));
+        QCOMPARE(h.data(HistoryModel::BodyRole).toString(), QStringLiteral("secret agenda"));
+    }
+
     /* body-images is not advertised; an <img> made the daemon fetch URLs and
        open local paths (a FIFO froze it). Unterminated tags got through to
        StyledText as well, so stray '<' is escaped. */

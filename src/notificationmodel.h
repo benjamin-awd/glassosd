@@ -65,6 +65,7 @@ public:
         ReplySubmitTextRole,
         ProgressRole,
         BadgeSourceRole,
+        RealActionsRole,   // the actions with their real labels, for data() itself
     };
     Q_ENUM(Roles)
 
@@ -181,6 +182,7 @@ public:
     bool screenSharing() const { return m_screenSharing; }
     /* What to do with notifications whose sender expressed no preference. */
     void setLockPrivacyDefault(Notification::LockPrivacy policy);
+    Notification::LockPrivacy lockPrivacyDefault() const { return m_lockDefault; }
     /* True while the notification is still displayed or queued, which is the
        only window in which its sender is still listening for an action. */
     bool isLive(uint id) const;

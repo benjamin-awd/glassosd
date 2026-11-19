@@ -166,6 +166,19 @@ void HistoryModel::save() const
     }
 }
 
+void HistoryModel::setScreenSharing(bool sharing, Notification::LockPrivacy fallback)
+{
+    if (m_sharing == sharing && m_sharingFallback == fallback) {
+        return;
+    }
+    m_sharing = sharing;
+    m_sharingFallback = fallback;
+    if (!m_rows.isEmpty()) {
+        Q_EMIT dataChanged(index(0), index(m_rows.size() - 1),
+                           {SummaryRole, BodyRole, IconSourceRole});
+    }
+}
+
 int HistoryModel::rowCount(const QModelIndex &parent) const
 {
     return parent.isValid() ? 0 : m_rows.size();
@@ -196,6 +209,34 @@ QVariant HistoryModel::data(const QModelIndex &index, int role) const
     }
 
     const Notification &n = r.entry;
+    if (m_sharing) {
+        const auto policy = n.lockPrivacy == Notification::LockPrivacy::Unset ? m_sharingFallback
+                                                                             : n.lockPrivacy;
+        const bool hideAll = policy == Notification::LockPrivacy::HideContent
+                          || policy == Notification::LockPrivacy::Hide;
+        const bool hideBody = hideAll || policy == Notification::LockPrivacy::HideBody;
+        switch (role) {
+        case SummaryRole:
+            if (hideAll) {
+                return tr("Notification hidden");
+            }
+            break;
+        case BodyRole:
+            if (hideBody) {
+                return QString();
+            }
+            break;
+        case IconSourceRole:
+            /* The picture is content (an avatar, a photo); the app's icon
+               is not. Without a picture this is the app icon anyway. */
+            if (hideBody && (n.image.isValid() || n.appIcon != n.senderIcon)) {
+                return n.senderIcon.isEmpty() ? QString() : QStringLiteral("image://icon/") + n.senderIcon;
+            }
+            break;
+        default:
+            break;
+        }
+    }
     switch (role) {
     case IdRole:      return n.id;
     case SummaryRole: return n.summary;

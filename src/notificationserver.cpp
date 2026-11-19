@@ -628,6 +628,9 @@ void NotificationServer::refreshInhibited()
             sharing = sharing || (i.screenShare && m_sharePrivate);
         }
         m_model->setScreenSharing(sharing);
+        if (m_history) {
+            m_history->setScreenSharing(sharing, m_model->lockPrivacyDefault());
+        }
     }
     /* The property is declared EmitsChangedSignal, so anything watching for
        quiet — a status widget, another daemon — hears about it without
