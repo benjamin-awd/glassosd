@@ -51,6 +51,19 @@ private Q_SLOTS:
         QFile::remove(storePath() + QStringLiteral(".corrupt"));
     }
 
+    /* The file holds notification text: owner only, whatever the umask. */
+    void theFileIsReadableOnlyByItsOwner()
+    {
+        {
+            SnoozeStore s;
+            s.snooze(note(QStringLiteral("private")), 60);
+        }
+        QVERIFY(QFile::exists(storePath()));
+        QCOMPARE(QFile::permissions(storePath()) & (QFileDevice::ReadGroup | QFileDevice::ReadOther
+                                                  | QFileDevice::WriteGroup | QFileDevice::WriteOther),
+                 QFileDevice::Permissions());
+    }
+
     void snoozedNotificationsSurviveARestart()
     {
         {

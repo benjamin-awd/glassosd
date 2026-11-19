@@ -52,7 +52,8 @@ inline QJsonArray read(const QString &path)
 
     const QString aside = path + QStringLiteral(".corrupt");
     QFile::remove(aside);
-    const bool kept = QFile::copy(path, aside);
+    const bool kept = QFile::copy(path, aside)
+        && QFile::setPermissions(aside, QFileDevice::ReadOwner | QFileDevice::WriteOwner);
     qWarning("glassosd: %s could not be read (%s at byte %d)%s",
              qPrintable(path),
              error.error == QJsonParseError::NoError ? "not a list" : qPrintable(error.errorString()),
@@ -68,6 +69,10 @@ inline bool write(const QString &path, const QJsonArray &arr)
     if (!f.open(QIODevice::WriteOnly)) {
         return false;
     }
+    /* Owner only. These hold notification text (history, snoozes), and the
+       default umask left them world-readable: any other account on the
+       machine could read every message the daemon had shown. */
+    f.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);
     f.write(QJsonDocument(arr).toJson(QJsonDocument::Compact));
     return f.commit();
 }
