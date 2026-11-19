@@ -171,6 +171,19 @@ int main(int argc, char *argv[])
        aborting with a confusing "xcb-cursor0 is needed" message. */
     qputenv("QT_QPA_PLATFORM", "wayland");
 
+    /* Animate on the wall clock, not on vsync ticks. Qt's default driver
+       advances animations by one refresh interval per frame and takes that
+       interval from a single screen, so on a mixed setup it is wrong for every
+       other screen. Measured with QSG_RENDER_TIMING on a 120 Hz monitor beside
+       a 60 Hz laptop panel: the 400 ms arrival ran at about double speed,
+       half-way after 42 ms and done after 262 ms, losing the slow settle the
+       curve was fitted for. With the simple driver it tracked the curve within
+       a few percent and finished at 410 ms; on the 60 Hz panel both drivers
+       were identical. An explicit setting in the environment still wins. */
+    if (qEnvironmentVariableIsEmpty("QSG_USE_SIMPLE_ANIMATION_DRIVER")) {
+        qputenv("QSG_USE_SIMPLE_ANIMATION_DRIVER", "1");
+    }
+
     /* No LayerShellQt::Shell::useLayerShell() call: deprecated since 6.6 and
        unnecessary since Qt 6.5, which wires the platform integration up on
        demand when a Window is given layer-shell properties. */
