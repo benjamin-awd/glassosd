@@ -28,7 +28,7 @@ Item {
 
     /* Sheets actually drawn: none while the group is open in place, since
        the rows it would stand for are then on the card itself. */
-    readonly property int shownDepth: groupShown ? 0 : stackDepth
+    readonly property int shownDepth: groupProgress > 0 ? 0 : stackDepth
     readonly property bool stacked: shownDepth > 0
 
     /* One layer for the whole stack: it flattens the cards so their alphas
@@ -441,25 +441,79 @@ Item {
     property bool expanded: false
     readonly property int expandedLines: 20
 
-    /* The group opened in place by "Show N more": the rest of the burst as
-       rows on this card, instead of a trip to the notification centre. The
-       popup model only counts a group's members (coalescing closes them with
-       their senders as it merges), so the rows come from history, which
-       recorded each one on arrival. Never on the lock screen: the pill is
-       withheld there, and a group left open must not keep showing what the
-       lock screen hides. */
+    /* The group opened in place, as macOS opens a stack in Notification
+       Centre: a header with the app's name, Show less and a clear button
+       above the top card, and each earlier notification as a card of its own
+       below it, sliding out from under the top card where the sheets were.
+
+       The popup model only counts a group's members (coalescing closes them
+       with their senders as it merges), so those cards are read from history,
+       which recorded each one on arrival. Never on the lock screen: the way
+       in is withheld there, and a group left open must not keep showing what
+       the lock screen hides. */
     property bool groupOpen: false
     readonly property bool groupShown: groupOpen && root.entry.groupCount > 1
                                        && !NotificationModel.screenLocked
-    /* Rows on the card before the rest are left to the centre. Past five the
-       card stops being a glance; the link under them opens the whole group. */
+    /* Cards before the rest are left to the centre. Past five the stack
+       stops being a glance; a link under them opens the whole group. */
     readonly property int groupRowsMax: 5
-    readonly property var groupMembers: {
+    /* 0 closed, 1 open, animated on the arrival curve. Everything about the
+       open group is a function of it, so opening and closing are the same
+       motion run in opposite directions. */
+    property real groupProgress: groupShown ? 1.0 : 0.0
+    Behavior on groupProgress {
+        NumberAnimation {
+            duration: Style.animIn
+            easing.type: Style.curveIn.length ? Easing.BezierSpline : Easing.OutQuint
+            easing.bezierCurve: Style.curveIn
+        }
+    }
+    /* Read when the group opens and when history changes, not bound to
+       progress: a new array rebuilds every member card, and closing has to
+       keep them while they slide back in. Cleared once fully closed. */
+    property var groupMembers: []
+    /* The open group's own pointer: on a member card or the header. */
+    property int groupHovers: 0
+    function refreshMembers() {
         if (!groupShown)
-            return []
-        HistoryModel.total   // re-read whenever history changes (NOTIFY changed)
-        return HistoryModel.groupMembers(root.entry.groupKey, root.entry.notifId,
-                                         Math.min(root.entry.groupCount - 1, groupRowsMax))
+            return
+        groupMembers = HistoryModel.groupMembers(root.entry.groupKey, root.entry.notifId,
+                                                 Math.min(root.entry.groupCount - 1, groupRowsMax))
+    }
+    onGroupProgressChanged: if (groupProgress === 0 && !groupShown) groupMembers = []
+    Connections {
+        target: HistoryModel
+        function onChanged() { root.refreshMembers() }
+    }
+    Connections {
+        target: root.entry
+        ignoreUnknownSignals: true
+        function onGroupCountChanged() { root.refreshMembers() }
+    }
+    /* An open group is being read: it stays until closed or cleared, as an
+       expanded stack in Notification Centre does, rather than expiring the
+       moment the pointer wanders off it. */
+    onGroupShownChanged: {
+        refreshMembers()
+        root.hoverChanged(pointerOn || cardMenu.open || groupShown)
+    }
+
+    /* The header's height is fixed rather than read from the loaded item, so
+       cardTop has something to animate towards from the first frame. */
+    readonly property int groupHeaderBar: 30
+    readonly property real groupHeaderH: groupHeaderBar + Style.notifySpacing
+    /* Where the top card sits: pushed down by the header as it opens. */
+    readonly property real cardTop: groupHeaderH * groupProgress
+    /* Total height of the member cards and the gaps above them, open. */
+    readonly property real membersH: {
+        let h = 0
+        for (let i = 0; i < memberCards.count; ++i) {
+            const m = memberCards.itemAt(i)
+            if (m) h += Style.notifySpacing + m.implicitHeight
+        }
+        if (centreLink.item)
+            h += Style.notifySpacing + centreLink.item.implicitHeight
+        return h
     }
 
     /* The committed swipe's flight, set by endSwipe(). */
@@ -485,15 +539,19 @@ Item {
        model it had left, the dwell timer resumed, and the card could expire
        under the pointer. A HoverHandler is passive and stays hovered over
        the card's children. */
-    readonly property bool pointerOn: cardPointer.hovered || closeButton.hovered
+    readonly property bool pointerOn: cardPointer.hovered || closeButton.hovered || groupHovers > 0
     onPointerOnChanged: {
-        root.hoverChanged(pointerOn || cardMenu.open)
+        root.hoverChanged(pointerOn || cardMenu.open || groupShown)
         if (!pointerOn)
             closeGrace.restart()
     }
 
-    implicitHeight: card.implicitHeight
-                    + (shownDepth > 0 ? Style.stackDrop(shownDepth - 1) : 0)
+    readonly property real closedHeight: card.implicitHeight
+                    + (stackDepth > 0 ? Style.stackDrop(stackDepth - 1) : 0)
+    implicitHeight: groupProgress > 0
+                    ? closedHeight + (groupHeaderH + membersH + card.implicitHeight - closedHeight)
+                                     * groupProgress
+                    : card.implicitHeight + (shownDepth > 0 ? Style.stackDrop(shownDepth - 1) : 0)
 
     // ---- stacked edges, drawn behind and below --------------------------
     CardStackSurface {
@@ -508,6 +566,7 @@ Item {
     GlassPanel {
         id: card
         width: parent.width
+        y: root.cardTop
         radius: Style.notifyRadius
         /* Opaque while stacked: the root layer carries the alpha for the whole
            stack, so anything inside it that is translucent in its own right
@@ -728,6 +787,14 @@ Item {
                    it published one — that is what makes a chat notification
                    open the conversation. Middle-click always just dismisses,
                    and so does left-click when there is no default action. */
+                /* A closed stack opens on a click, as macOS opens one in
+                   Notification Centre: the click is asking what is under the
+                   top card. Its default action is a click away once open. */
+                if (mouse.button === Qt.LeftButton && root.stacked
+                    && root.entry.groupCount > 1 && !NotificationModel.screenLocked) {
+                    root.groupOpen = true
+                    return
+                }
                 if (mouse.button === Qt.LeftButton && root.entry.hasDefaultAction)
                     root.activated()
                 else
@@ -1027,127 +1094,14 @@ Item {
                     }
                 }
 
-                /* The open group: one row per earlier notification, newest
-                   first, under a hairline. Read-only text plus a click, since
-                   their senders were told they closed when the group merged:
-                   a click opens them as the centre does (the app, or the
-                   default action if one is somehow still live). */
-                ColumnLayout {
-                    id: groupRows
-                    Layout.fillWidth: true
-                    Layout.topMargin: 8
-                    visible: root.groupShown
-                    spacing: 0
-
-                    Repeater {
-                        model: root.groupMembers
-
-                        Item {
-                            id: memberRow
-                            required property var modelData
-                            Layout.fillWidth: true
-                            implicitHeight: memberCol.implicitHeight + 12
-
-                            Rectangle {
-                                anchors.top: parent.top
-                                width: parent.width
-                                height: 1
-                                color: Style.controlEdge
-                            }
-                            Rectangle {
-                                anchors.fill: parent
-                                anchors.topMargin: 1
-                                anchors.leftMargin: -6
-                                anchors.rightMargin: -6
-                                radius: 6
-                                color: memberArea.pressed ? Style.controlFillHover
-                                     : memberArea.containsMouse ? Style.controlFill : "transparent"
-                            }
-
-                            ColumnLayout {
-                                id: memberCol
-                                anchors.left: parent.left
-                                anchors.right: parent.right
-                                anchors.verticalCenter: parent.verticalCenter
-                                anchors.verticalCenterOffset: 1
-                                spacing: 1
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 6
-                                    Text {
-                                        Layout.fillWidth: true
-                                        text: memberRow.modelData.summary
-                                              + (memberRow.modelData.repeatCount > 1
-                                                 ? "  \u00D7" + memberRow.modelData.repeatCount : "")
-                                        color: Style.foreground
-                                        font.family: Style.fontFamily
-                                        font.pointSize: Style.notifyFontSize - 1
-                                        font.weight: Font.DemiBold
-                                        elide: Text.ElideRight
-                                        maximumLineCount: 1
-                                        textFormat: Text.PlainText
-                                    }
-                                    Text {
-                                        text: memberRow.modelData.when
-                                        color: Style.notifyTime
-                                        font.family: Style.fontFamily
-                                        font.pointSize: Style.notifyTimePx > 0 ? Style.notifyTimePx * 0.75
-                                                                               : Style.notifyFontSize - 2
-                                    }
-                                }
-                                Text {
-                                    Layout.fillWidth: true
-                                    visible: text !== ""
-                                    text: memberRow.modelData.body
-                                    color: Style.notifyBody
-                                    font.family: Style.fontFamily
-                                    font.pointSize: Style.notifyFontSize - 2
-                                    wrapMode: Text.WordWrap
-                                    maximumLineCount: 2
-                                    elide: Text.ElideRight
-                                    textFormat: Text.StyledText
-                                }
-                            }
-
-                            MouseArea {
-                                id: memberArea
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                onClicked: root.memberActivated(memberRow.modelData.id)
-                            }
-                        }
-                    }
-
-                    /* The whole group, settings and all, in the centre: for
-                       the members past groupRowsMax, and for any that history
-                       no longer holds (cleared, or aged out past its cap). */
-                    Text {
-                        id: centreLink
-                        Layout.topMargin: 4
-                        readonly property int rest: root.entry.groupCount - 1 - root.groupMembers.length
-                        text: rest > 0 ? rest + " more in Notification Centre" : "Open in Notification Centre"
-                        color: centreArea.containsMouse ? Style.foreground : Style.notifyTime
-                        font.family: Style.fontFamily
-                        font.pointSize: Style.notifyFontSize - 2
-                        font.underline: centreArea.containsMouse
-
-                        MouseArea {
-                            id: centreArea
-                            anchors.fill: parent
-                            anchors.margins: -4
-                            hoverEnabled: true
-                            onClicked: root.moreRequested()
-                        }
-                    }
-                }
-
                 /* A pill, matching the queue-overflow row exactly. "More exists
                    beyond what is shown" was previously two different shapes
                    depending on which mechanism produced it. */
                 Rectangle {
                     Layout.topMargin: 6
-                    visible: root.entry.groupCount > 1
+                    /* Closed groups only: once open, "Show less" lives in the
+                       group's header, where macOS puts it. */
+                    visible: root.entry.groupCount > 1 && !root.groupOpen
                     implicitWidth: moreLine.implicitWidth + 22
                     implicitHeight: moreLine.implicitHeight + 10
                     radius: height / 2
@@ -1164,8 +1118,7 @@ Item {
                            said the same words for something else entirely —
                            notifications waiting behind the display limit, which
                            you cannot act on — so the two are worded apart. */
-                        text: root.groupShown ? "Show less"
-                                              : "Show " + (root.entry.groupCount - 1) + " more"
+                        text: "Show " + (root.entry.groupCount - 1) + " more"
                         color: Style.foreground
                         font.family: Style.fontFamily
                         font.pointSize: Style.notifyFontSize - 2
@@ -1176,9 +1129,7 @@ Item {
                         anchors.fill: parent
                         hoverEnabled: true
                         enabled: !NotificationModel.screenLocked
-                        /* Opens the group here; the centre is one more click,
-                           on the link under the rows. */
-                        onClicked: root.groupOpen = !root.groupOpen
+                        onClicked: root.groupOpen = true
                     }
                 }
 
@@ -1234,7 +1185,190 @@ Item {
             onSettingsRequested: root.settingsRequested()
             /* Keeps the dwell paused while open: reaching a row can take the
                pointer off the card. */
-            onOpenChanged: root.hoverChanged(open || root.pointerOn)
+            onOpenChanged: root.hoverChanged(open || root.pointerOn || root.groupShown)
+        }
+    }
+
+    // ---- the open group: header above, member cards below ---------------
+    /* Loaded only while the group is open or animating: a GlassPanel
+       registers its blur and input region as soon as it exists, visible or
+       not, so a header kept around while closed would leave a blurred patch
+       above the card. */
+    Loader {
+        id: groupHeader
+        width: parent.width
+        active: root.groupProgress > 0
+        height: root.groupHeaderBar
+        opacity: Math.min(1, root.groupProgress * 2.5)
+        sourceComponent: Item {
+
+            HoverHandler {
+                id: headerPointer
+                onHoveredChanged: root.groupHovers += hovered ? 1 : -1
+            }
+            Component.onDestruction: if (headerPointer.hovered) root.groupHovers -= 1
+
+            /* The app's name, as macOS titles an open stack. Bare text, with
+               the card shadow under it to hold it off whatever window is
+               behind the popup. */
+            Text {
+                id: groupTitle
+                anchors.left: parent.left
+                anchors.leftMargin: 4
+                anchors.right: lessButton.left
+                anchors.rightMargin: 8
+                anchors.verticalCenter: parent.verticalCenter
+                text: root.entry.appName
+                textFormat: Text.PlainText
+                color: Style.foreground
+                font.family: Style.fontFamily
+                font.pointSize: Style.notifyFontSize + 2
+                font.bold: true
+                elide: Text.ElideRight
+                layer.enabled: true
+                layer.effect: MultiEffect {
+                    shadowEnabled: true
+                    shadowColor: Style.shadowColor
+                    shadowBlur: 0.6
+                    shadowOpacity: 0.8
+                    shadowVerticalOffset: 1
+                    autoPaddingEnabled: true
+                }
+            }
+
+            GlassPanel {
+                id: lessButton
+                anchors.right: clearButton.left
+                anchors.rightMargin: 6
+                anchors.verticalCenter: parent.verticalCenter
+                implicitWidth: lessLabel.implicitWidth + 20
+                implicitHeight: 24
+                width: implicitWidth
+                height: implicitHeight
+                radius: height / 2
+                glass: true
+                surfaceColor: lessArea.pressed ? Style.lift(Style.cardBackground, 1.28)
+                            : lessArea.containsMouse ? Style.lift(Style.cardBackground, 1.12)
+                                                     : Style.cardBackground
+
+                Text {
+                    id: lessLabel
+                    anchors.centerIn: parent
+                    text: "Show less"   // Apple's own capitalisation
+                    color: Style.foreground
+                    font.family: Style.fontFamily
+                    font.pointSize: Style.notifyFontSize - 2
+                }
+                MouseArea {
+                    id: lessArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onClicked: root.groupOpen = false
+                }
+            }
+
+            /* Clears the group: the popup goes, as the X on an open stack
+               clears it in Notification Centre. History keeps every entry. */
+            GlassPanel {
+                id: clearButton
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                width: 24
+                height: 24
+                radius: 12
+                glass: true
+                surfaceColor: Style.cardBackground
+
+                CardButton {
+                    anchors.fill: parent
+                    icon: "close"
+                    color: "transparent"
+                    border.width: 0
+                    onActivated: root.dismissed()
+                }
+            }
+        }
+    }
+
+    Repeater {
+        id: memberCards
+        model: root.groupMembers
+
+        MemberCard {
+            id: member
+            required property var modelData
+            required property int index
+            entry: modelData
+            z: -2
+
+            /* Under the top card it stands in for sheet `index` (or the last
+               sheet, past the stack's depth); open, it is a card of its own
+               below the one before it. */
+            readonly property int sheet: Math.min(index, Math.max(root.stackDepth - 1, 0))
+            readonly property bool wasSheet: index < root.stackDepth
+            readonly property real closedWidth: root.width - (sheet + 1) * Style.stackInset * 2
+            readonly property real closedY: Math.max(root.cardTop,
+                root.cardTop + card.height + (root.stackDepth > 0 ? Style.stackDrop(sheet) : 0) - height)
+            readonly property real openY: {
+                let y = root.cardTop + card.height + Style.notifySpacing
+                for (let j = 0; j < index; ++j) {
+                    const m = memberCards.itemAt(j)
+                    if (m) y += m.implicitHeight + Style.notifySpacing
+                }
+                return y
+            }
+            readonly property real p: root.groupProgress
+            open: p
+            width: closedWidth + (root.width - closedWidth) * p
+            x: (root.width - width) / 2
+            y: closedY + (openY - closedY) * p
+            opacity: wasSheet ? 1 : p
+
+            onHoveredChanged: root.groupHovers += hovered ? 1 : -1
+            Component.onDestruction: if (hovered) root.groupHovers -= 1
+            onActivated: root.memberActivated(modelData.id)
+        }
+    }
+
+    /* The rest of the group, and its settings, in the centre: for members
+       past groupRowsMax, and any that history no longer holds (cleared, or
+       aged out past its cap). */
+    Loader {
+        id: centreLink
+        active: root.groupProgress > 0
+                && root.entry.groupCount - 1 > root.groupMembers.length
+        x: 0
+        y: {
+            let y = root.cardTop + card.height
+            for (let j = 0; j < memberCards.count; ++j) {
+                const m = memberCards.itemAt(j)
+                if (m) y += Style.notifySpacing + m.implicitHeight
+            }
+            return y + Style.notifySpacing
+        }
+        opacity: root.groupProgress
+        sourceComponent: GlassPanel {
+            implicitWidth: linkLabel.implicitWidth + 24
+            implicitHeight: 26
+            radius: height / 2
+            glass: true
+            surfaceColor: linkArea.containsMouse ? Style.lift(Style.cardBackground, 1.12)
+                                                 : Style.cardBackground
+            Text {
+                id: linkLabel
+                anchors.centerIn: parent
+                text: (root.entry.groupCount - 1 - root.groupMembers.length)
+                      + " more in Notification Centre"
+                color: Style.foreground
+                font.family: Style.fontFamily
+                font.pointSize: Style.notifyFontSize - 2
+            }
+            MouseArea {
+                id: linkArea
+                anchors.fill: parent
+                hoverEnabled: true
+                onClicked: root.moreRequested()
+            }
         }
     }
 

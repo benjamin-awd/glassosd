@@ -124,7 +124,7 @@ endif()
 set(GLASSOSD_QML_TEST_MODULE ${CMAKE_CURRENT_BINARY_DIR}/qmlimports/org/glassosd/ui)
 set(GLASSOSD_QML_UNDER_TEST
     NotificationStack.qml NotificationCard.qml GlassPanel.qml CardButton.qml
-    CardStackSurface.qml CardMenu.qml CardReply.qml CardActions.qml
+    CardStackSurface.qml MemberCard.qml CardMenu.qml CardReply.qml CardActions.qml
     Style.qml Icons.qml)
 set(_qml_copy_cmds)
 foreach(f IN LISTS GLASSOSD_QML_UNDER_TEST)

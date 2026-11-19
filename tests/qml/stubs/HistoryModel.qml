@@ -4,6 +4,7 @@ pragma Singleton
 import QtQuick
 QtObject {
     property string lastGroup: ""
+    signal changed()
     property int total: 0
     property var members: []
     property int lastActivated: -1

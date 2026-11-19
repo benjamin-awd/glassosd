@@ -77,6 +77,7 @@ qt_add_qml_module(glassosd
         qml/Toggle.qml
         qml/CardButton.qml
         qml/CardStackSurface.qml
+        qml/MemberCard.qml
         qml/CardMenu.qml
         qml/CardReply.qml
         qml/CardActions.qml

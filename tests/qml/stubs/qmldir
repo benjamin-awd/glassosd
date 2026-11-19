@@ -18,3 +18,4 @@ CardStackSurface 1.0 CardStackSurface.qml
 CardMenu 1.0 CardMenu.qml
 CardReply 1.0 CardReply.qml
 CardActions 1.0 CardActions.qml
+MemberCard 1.0 MemberCard.qml

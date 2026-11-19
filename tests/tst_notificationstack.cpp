@@ -637,9 +637,12 @@ private Q_SLOTS:
         QCOMPARE(m_model->rowCount(), 1);
     }
 
-    /* "Show N more" opens the group on the card itself: its sheets fold
-       away, the earlier notifications appear as rows read from history, and
-       a row's click goes to history's activation. Nothing is dismissed and
+    /* A group opens in place the way macOS opens a stack: a click on the
+       stacked card (or "Show N more") folds the sheets away, a header with
+       the app's name, Show less and a clear button appears above the card,
+       and each earlier notification becomes a card of its own below it,
+       read from history. A member card's click goes to history's
+       activation; Show less closes the group again. Nothing is dismissed and
        the centre is not opened. */
     void aGroupOpensInPlace()
     {
@@ -669,7 +672,7 @@ private Q_SLOTS:
             QQuickItem *found = nullptr;
             std::function<void(QQuickItem *)> walk = [&](QQuickItem *it) {
                 for (QQuickItem *c : it->childItems()) {
-                    if (!found && c->property("text").toString() == text) {
+                    if (!found && c->property("text").toString() == text && c->isVisible()) {
                         found = c;
                     }
                     walk(c);
@@ -683,30 +686,92 @@ private Q_SLOTS:
             QTest::mouseMove(m_win, at);
             QTest::mouseClick(m_win, Qt::LeftButton, Qt::NoModifier, at);
         };
+        auto settledOpen = [&](qreal target) {
+            QTRY_COMPARE(card->property("groupProgress").toReal(), target);
+        };
 
-        QQuickItem *pill = findText(QStringLiteral("Show 2 more"));
-        QVERIFY(pill);
-        const qreal before = card->height();
-        click(pill);
+        QVERIFY(findText(QStringLiteral("Show 2 more")));
+        const qreal closedHeight = card->height();
+
+        /* A click on the stacked card itself opens it. */
+        QTest::mouseMove(m_win, drawn(card).center().toPoint());
+        QTest::mouseClick(m_win, Qt::LeftButton, Qt::NoModifier, drawn(card).center().toPoint());
         QTRY_VERIFY(card->property("groupShown").toBool());
+        settledOpen(1.0);
         QCOMPARE(card->property("shownDepth").toInt(), 0);
-        QCOMPARE(pill->property("text").toString(), QStringLiteral("Show less"));
-        QTRY_VERIFY(card->height() > before + 20);
+        QVERIFY(!findText(QStringLiteral("Show 2 more")));   // Show less is in the header now
+        QVERIFY(card->height() > closedHeight + 60);
+        QCOMPARE(m_model->rowCount(), 1);                     // opening dismissed nothing
 
+        QQuickItem *title = findText(QStringLiteral("Chat"));
+        QQuickItem *less = findText(QStringLiteral("Show less"));
         QQuickItem *second = findText(QStringLiteral("Second message"));
-        QVERIFY(second && second->isVisible());
+        QVERIFY(title && less && second);
         QVERIFY(findText(QStringLiteral("First message  ×3")));
-        QVERIFY(findText(QStringLiteral("Open in Notification Centre")));
+        /* Order down the screen: header, the top card's text, then members. */
+        const qreal titleY = title->mapToScene(QPointF(0, 0)).y();
+        const qreal secondY = second->mapToScene(QPointF(0, 0)).y();
+        QVERIFY(titleY < secondY);
+        QVERIFY(secondY > card->mapToScene(QPointF(0, card->property("cardTop").toReal())).y() + 20);
+        /* Both members are cards of their own: in the window's regions. */
+        QVERIFY(holders() >= 5);   // card, two members, Show less, clear
 
         click(second);
         QTRY_COMPARE(history->property("lastActivated").toInt(), 41);
         QCOMPARE(history->property("lastGroup").toString(), QString());   // the centre stayed shut
         QCOMPARE(m_model->rowCount(), 1);
 
-        click(pill);
+        click(less);
         QTRY_VERIFY(!card->property("groupShown").toBool());
+        settledOpen(0.0);
         QCOMPARE(card->property("shownDepth").toInt(), 2);
-        QCOMPARE(pill->property("text").toString(), QStringLiteral("Show 2 more"));
+        QTRY_COMPARE(card->property("groupMembers").toList().size(), 0);
+        QTRY_COMPARE(card->height(), closedHeight);
+        QVERIFY(!findText(QStringLiteral("Show less")));
+
+        /* "Show N more" opens it too. */
+        click(findText(QStringLiteral("Show 2 more")));
+        QTRY_VERIFY(card->property("groupShown").toBool());
+    }
+
+    /* More members than the card shows: the rest are a link to the centre. */
+    void aBigGroupLinksToTheCentre()
+    {
+        m_model->setCoalesce(3, 20000);
+        for (int i = 0; i < 9; ++i) {
+            Notification n = note(QStringLiteral("mail"));
+            n.appName = QStringLiteral("Mail");
+            m_model->insert(n);
+        }
+        QTRY_COMPARE(cards().size(), 1);
+        waitSettled();
+        QQuickItem *card = cards().constFirst();
+        QVariantList members;
+        for (int i = 0; i < 8; ++i) {
+            members << QVariantMap{{QStringLiteral("id"), 100 + i},
+                                   {QStringLiteral("summary"), QStringLiteral("Mail %1").arg(i)},
+                                   {QStringLiteral("body"), QString()}, {QStringLiteral("iconSource"), QString()},
+                                   {QStringLiteral("when"), QStringLiteral("now")}, {QStringLiteral("repeatCount"), 1}};
+        }
+        singleton("HistoryModel")->setProperty("members", members);
+        card->setProperty("groupOpen", true);
+        QTRY_COMPARE(card->property("groupProgress").toReal(), 1.0);
+        QCOMPARE(card->property("groupMembers").toList().size(), 5);
+        QQuickItem *link = nullptr;
+        std::function<void(QQuickItem *)> walk = [&](QQuickItem *it) {
+            for (QQuickItem *c : it->childItems()) {
+                if (c->property("text").toString() == QStringLiteral("3 more in Notification Centre")) {
+                    link = c;
+                }
+                walk(c);
+            }
+        };
+        walk(card);
+        QVERIFY(link);
+        const QPoint at = link->mapToScene(QPointF(link->width() / 2, link->height() / 2)).toPoint();
+        QTest::mouseMove(m_win, at);
+        QTest::mouseClick(m_win, Qt::LeftButton, Qt::NoModifier, at);
+        QTRY_COMPARE(singleton("HistoryModel")->property("lastGroup").toString(), QStringLiteral("Mail"));
     }
 
     /* A short body offers nothing to expand. */
