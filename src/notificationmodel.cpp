@@ -995,12 +995,37 @@ void NotificationModel::mute(uint id, int minutes)
     } else {
         until = now().addSecs(qint64(minutes) * 60);
     }
-    m_mutedUntil.insert(n->groupKey(), until);
+    const QString key = n->groupKey();
+    m_mutedUntil.insert(key, until);
     closeId(id, CloseReason::Dismissed);
+    /* The rest of the app goes too, on screen and queued, as Do Not
+       Disturb would have kept them back: it used to take only the card it
+       was chosen on, and the app's queued notifications still popped up
+       after it. What isMuted() lets through (a critical) stays. */
+    QList<uint> rest;
+    for (const Notification &d : std::as_const(m_displayed)) {
+        if (!d.closing && d.groupKey() == key && isMuted(d)) {
+            rest << d.id;
+        }
+    }
+    for (const Notification &w : std::as_const(m_waiting)) {
+        if (w.groupKey() == key && isMuted(w)) {
+            rest << w.id;
+        }
+    }
+    for (uint other : std::as_const(rest)) {
+        closeId(other, CloseReason::Dismissed);
+    }
 }
 
 bool NotificationModel::isMuted(const Notification &n) const
 {
+    /* A mute is a casual "less of this app", chosen from a banner. A
+       critical notification is the app saying this one cannot wait (the
+       battery about to die, an incoming call), and is let through. */
+    if (n.urgency == Urgency::Critical) {
+        return false;
+    }
     const auto it = m_mutedUntil.constFind(n.groupKey());
     return it != m_mutedUntil.cend() && now() < it.value();
 }

@@ -393,6 +393,30 @@ private Q_SLOTS:
         QVERIFY(!m.isLive(601) && !m.isLive(602));
     }
 
+    /* Mute takes the app's other cards and queue with it, not just the card
+       it was chosen on, and lets a critical one through: muting the low
+       battery warning must not hide the critical one, nor a call. */
+    void muteClearsTheAppButNotItsCriticals()
+    {
+        NotificationModel m;
+        plain(m);
+        m.setExitMs(0);
+        m.setLimit(2);
+        m.insert(note(QStringLiteral("Chat"), QStringLiteral("a"), {}, 701));
+        m.insert(note(QStringLiteral("Chat"), QStringLiteral("b"), {}, 702));
+        m.insert(note(QStringLiteral("Chat"), QStringLiteral("c"), {}, 703));   // queued
+        m.insert(note(QStringLiteral("Mail"), QStringLiteral("d"), {}, 704));   // queued
+        m.mute(701, 60);
+        QVERIFY(!m.isLive(701) && !m.isLive(702) && !m.isLive(703));
+        QVERIFY(m.isLive(704));
+        m.insert(note(QStringLiteral("Chat"), QStringLiteral("muted"), {}, 705));
+        QVERIFY(!m.isLive(705));
+        Notification call = note(QStringLiteral("Chat"), QStringLiteral("call"), {}, 706);
+        call.urgency = Urgency::Critical;
+        m.insert(call);
+        QVERIFY(m.isLive(706));
+    }
+
     /* A card that stays up is told the time has moved on. */
     void theAgeTickRunsWhileCardsAreShown()
     {
