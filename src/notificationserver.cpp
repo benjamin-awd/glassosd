@@ -344,6 +344,17 @@ uint NotificationServer::handleNotify(const QString &appName,
    Notification from an entirely different payload and then needs all of this,
    identically — so it lives here rather than inside handleNotify(), and the
    two front doors cannot drift apart. */
+uint NotificationServer::wake(Notification n)
+{
+    n.id = mintId();
+    m_rules.apply(n);
+    n.snoozeMinutes = -1;
+    n.run.clear();
+    n.actions.clear();
+    n.inlineReply = false;
+    return m_model->insert(n);
+}
+
 uint NotificationServer::deliver(Notification &n)
 {
     /* Both doors, so the portal's notifications are held to the same limits. */

@@ -178,6 +178,12 @@ Window {
         function onRowsInserted() { win.refreshKeyboardFocus() }
         function onRowsRemoved()  { win.refreshKeyboardFocus() }
         function onModelReset()   { win.refreshKeyboardFocus() }
+        /* A card can gain a reply field without a row arriving: unlocking
+           (the reply is withheld while locked) only changes data, and so
+           does a replaces_id update that adds inline-reply. Cheap: a handful
+           of rows at most. */
+        function onDataChanged()  { win.refreshKeyboardFocus() }
+        function onScreenLockedChanged() { win.refreshKeyboardFocus() }
     }
 
     ColumnLayout {

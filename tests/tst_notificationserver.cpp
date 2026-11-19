@@ -26,6 +26,7 @@
 
 #include <QDBusMetaType>
 #include <QImage>
+#include <KSharedConfig>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 
@@ -439,6 +440,41 @@ private Q_SLOTS:
 
     /* An empty notification is dropped, but the sender is still told it
        closed; the portal side forgets its entry on that same signal. */
+    /* A snoozed notification wakes under a new id, without the actions its
+       sender stopped listening for, and meets the rules again: a rule that
+       snoozes does not send it straight back, one that hides it does. */
+    void aWokenNotificationMeetsTheRulesWithoutDeadButtons()
+    {
+        QTemporaryDir dir;
+        const QString path = dir.filePath(QStringLiteral("rc"));
+        {
+            QFile f(path);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("[Rule s]\nappname=Snoozy\nsnooze=10\n\n[Rule h]\nappname=Hidden\nskip_display=true\n");
+        }
+        Fixture f;
+        f.server.loadRules(KSharedConfig::openConfig(path, KConfig::SimpleConfig));
+
+        Notification n;
+        n.id = 5;
+        n.appName = QStringLiteral("Snoozy");
+        n.summary = QStringLiteral("back");
+        n.actions = {QStringLiteral("default"), QString(), QStringLiteral("ok"), QStringLiteral("OK")};
+        n.inlineReply = true;
+        const uint id = f.server.wake(n);
+        QVERIFY(id != 5u);
+        QCOMPARE(f.model.liveCount(), 1);
+        QCOMPARE(f.role(id, NotificationModel::ActionsRole).toList().size(), 0);
+        QCOMPARE(f.role(id, NotificationModel::HasDefaultActionRole).toBool(), false);
+        QCOMPARE(f.role(id, NotificationModel::InlineReplyRole).toBool(), false);
+
+        Notification hidden;
+        hidden.appName = QStringLiteral("Hidden");
+        hidden.summary = QStringLiteral("x");
+        f.server.wake(hidden);
+        QCOMPARE(f.model.liveCount(), 1);
+    }
+
     void anEmptyNotificationIsClosedNotForgotten()
     {
         Fixture f;

@@ -428,15 +428,7 @@ int main(int argc, char *argv[])
                          snoozes->snooze(once, minutes);
                      });
     QObject::connect(snoozes, &SnoozeStore::woke,
-                     notifications, [notifications, server](const Notification &n) {
-                         /* Restored from disk, it has no id; see mintId(). One
-                            snoozed in this run keeps its own. */
-                         Notification woken = n;
-                         if (woken.id == 0) {
-                             woken.id = server->mintId();
-                         }
-                         notifications->insert(woken);
-                     });
+                     notifications, [server](const Notification &n) { server->wake(n); });
     server->reserveIds(history->maxLoadedId());
     /* On by default now that we ship a D-Bus activation file. An app that
        posts a notification starts us on demand, and a daemon that starts and

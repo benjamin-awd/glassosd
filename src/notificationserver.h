@@ -84,6 +84,14 @@ public:
        history, insertion. The portal backend calls this directly. */
     uint deliver(Notification &n);
 
+    /* A snoozed notification coming back. It meets the rules as an arrival
+       does (a focus mode's Block switched on since the snooze applies), but
+       is not snoozed again, recorded twice or made to rerun a rule's
+       command. Its sender was told it closed when it was snoozed, so it
+       comes back under a new id and without the actions and reply field that
+       nobody is listening for any more. */
+    uint wake(Notification n);
+
     NotificationModel *model() const { return m_model; }
     void loadRules(const KSharedConfig::Ptr &config)
     {
