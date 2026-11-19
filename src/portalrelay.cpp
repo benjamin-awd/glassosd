@@ -54,6 +54,7 @@ void PortalRelay::daemonChanged()
     m_tokens.clear();
     m_inFlight.clear();
     m_withdrawn.clear();
+    m_pending.clear();
 }
 
 QString PortalRelay::keyFor(const QString &appId, const QString &portalId)
@@ -154,6 +155,11 @@ void PortalRelay::addNotification(const QString &appId, const QString &portalId,
         return;
     }
     const QString key = keyFor(appId, portalId);
+    if (m_inFlight.contains(key)) {
+        m_pending.insert(key, PendingAdd{appId, portalId, props});
+        m_withdrawn.remove(key);
+        return;
+    }
     const NotifyCall c = translate(appId, props);
     /* Same app, same id: the daemon replaces in place rather than stacking. */
     const uint replaces = m_ids.value(key, 0);
@@ -182,6 +188,7 @@ void PortalRelay::addNotification(const QString &appId, const QString &portalId,
                                  "org.freedesktop.Notifications: %s",
                                  qUtf8Printable(reply.error().message()));
                     }
+                    m_pending.remove(key);   // nothing to replace; dropped like the first
                     return;
                 }
                 const uint id = reply.value();
@@ -198,6 +205,12 @@ void PortalRelay::addNotification(const QString &appId, const QString &portalId,
                 }
                 m_entries.insert(id, Entry{appId, portalId, c.targets, c.defaultActionName});
                 m_ids.insert(key, id);
+                /* An update that arrived while this was in flight: now that
+                   the daemon's id is known, it replaces rather than stacks. */
+                if (m_pending.contains(key)) {
+                    const PendingAdd next = m_pending.take(key);
+                    addNotification(next.appId, next.portalId, next.props);
+                }
             });
 }
 
@@ -208,6 +221,7 @@ void PortalRelay::removeNotification(const QString &appId, const QString &portal
     if (it == m_ids.cend()) {
         if (m_inFlight.contains(key)) {
             m_withdrawn.insert(key);
+            m_pending.remove(key);   // withdrawn: the held update goes too
         }
         return;
     }

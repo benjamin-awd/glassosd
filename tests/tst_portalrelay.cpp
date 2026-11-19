@@ -443,6 +443,39 @@ private Q_SLOTS:
 
     /* Nothing owns the name at all. The relay must still answer the portal —
        that is the whole fix — and simply fail the one notification. */
+    /* Two adds for one id before the daemon has answered the first: the
+       second waits for the first's id and replaces it, instead of going out
+       with replaces_id 0 and leaving a second card behind. */
+    void anUpdateInFlightReplacesRatherThanStacks()
+    {
+        NEED_PRIVATE_BUS();
+        PortalRelay relay;
+        relay.addNotification(QStringLiteral("org.example.App"), QStringLiteral("n1"),
+                              {{QStringLiteral("title"), v(QStringLiteral("First"))}});
+        relay.addNotification(QStringLiteral("org.example.App"), QStringLiteral("n1"),
+                              {{QStringLiteral("title"), v(QStringLiteral("Second"))}});
+        QTRY_COMPARE(m_fake->calls.size(), 2);
+        QCOMPARE(m_fake->calls.at(1).replaces, 100u);
+        QCOMPARE(m_fake->calls.at(1).summary, QStringLiteral("Second"));
+    }
+
+    /* Add, add, withdraw, all before the first answer: one card was made
+       and it is closed; the held update is never sent. */
+    void aWithdrawalCancelsAHeldUpdate()
+    {
+        NEED_PRIVATE_BUS();
+        PortalRelay relay;
+        relay.addNotification(QStringLiteral("org.example.App"), QStringLiteral("n1"),
+                              {{QStringLiteral("title"), v(QStringLiteral("First"))}});
+        relay.addNotification(QStringLiteral("org.example.App"), QStringLiteral("n1"),
+                              {{QStringLiteral("title"), v(QStringLiteral("Second"))}});
+        relay.removeNotification(QStringLiteral("org.example.App"), QStringLiteral("n1"));
+        QTRY_COMPARE(m_fake->closed.size(), 1);
+        QCOMPARE(m_fake->closed.first(), 100u);
+        QTest::qWait(100);
+        QCOMPARE(m_fake->calls.size(), 1);
+    }
+
     /* A new daemon numbers from 1 again and never closes the old one's
        notifications, so the relay forgets them all when the name changes
        hands: a click on the new daemon's id 100 is not this app's, and the

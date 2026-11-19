@@ -82,6 +82,16 @@ private:
     QHash<QString, uint> m_ids;     // (app id, portal id) -> the daemon's id
     QSet<QString> m_inFlight;       // Notify sent, reply not yet back
     QSet<QString> m_withdrawn;      // removed while its Notify was in flight
+    /* An add for a key whose first Notify is still in flight. Sent then, it
+       went out with replaces_id 0 (the daemon's id was not known yet) and
+       made a second card; held until the reply, it replaces the first. Only
+       the latest is kept: it supersedes any between. */
+    struct PendingAdd {
+        QString appId;
+        QString portalId;
+        QVariantMap props;
+    };
+    QHash<QString, PendingAdd> m_pending;
     QHash<uint, QString> m_tokens;  // ActivationToken arrives just before ActionInvoked
     /* Bumped whenever org.freedesktop.Notifications changes hands. The ids
        above are the old daemon's: it never sends NotificationClosed for
