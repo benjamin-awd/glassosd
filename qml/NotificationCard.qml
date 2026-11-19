@@ -441,6 +441,63 @@ Item {
     property bool expanded: false
     readonly property int expandedLines: 20
 
+    /* The open and close are animated: the card's content is clipped to a
+       height that runs between the folded and opened text on the arrival
+       curve, so the extra lines are uncovered rather than appearing at once.
+
+       textOpen is what the Text elements read, not `expanded`. Opening sets
+       both at once (the text lays out in full and the clip uncovers it);
+       closing keeps the text open until the clip has shut over it, and only
+       then folds it, or the lines would vanish before the card had shrunk.
+       heldBodyH is -1 except while that runs, when it stands in for the
+       body's own height. */
+    property bool textOpen: false
+    property real foldedBodyH: 0
+    /* The clip runs from wherever it was to a live target, as a 0..1
+       progress, rather than between two numbers fixed at the click: the
+       opened text's height is only known once the layout has polished, a
+       frame later, and a target read at the click was still the folded one. */
+    property bool bodyMoving: false
+    property real bodyFrom: 0
+    property real bodyT: 0
+    readonly property real bodyTo: expanded ? body.implicitHeight : foldedBodyH
+    readonly property real heldBodyH: bodyMoving ? bodyFrom + (bodyTo - bodyFrom) * bodyT : -1
+    function setExpanded(open) {
+        if (open === expanded)
+            return
+        const from = bodyMoving ? heldBodyH : body.implicitHeight
+        bodyAnim.stop()
+        if (open) {
+            if (!textOpen)
+                foldedBodyH = body.implicitHeight
+            expanded = true
+            textOpen = true
+        } else {
+            expanded = false
+        }
+        bodyFrom = from
+        bodyT = 0
+        bodyMoving = true
+        bodyAnim.start()
+    }
+    NumberAnimation {
+        id: bodyAnim
+        target: root
+        property: "bodyT"
+        from: 0
+        to: 1
+        duration: Style.animIn
+        easing.type: Style.curveIn.length ? Easing.BezierSpline : Easing.OutQuint
+        easing.bezierCurve: Style.curveIn
+        onStopped: {
+            if (root.bodyT < 1)
+                return   // interrupted by a reversal, which has taken over
+            if (!root.expanded)
+                root.textOpen = false
+            root.bodyMoving = false
+        }
+    }
+
     /* The group opened in place, as macOS opens a stack in Notification
        Centre: a header with the app's name, Show less and a clear button
        above the top card, and each earlier notification as a card of its own
@@ -611,7 +668,8 @@ Item {
            wedge is what a stack of rounded cards actually looks like; the
            mismatched shapes were something else entirely. */
         flatBottom: false
-        implicitHeight: body.implicitHeight + Style.notifyPadTop + Style.notifyPadBottom
+        implicitHeight: (root.heldBodyH >= 0 ? root.heldBodyH : body.implicitHeight)
+                        + Style.notifyPadTop + Style.notifyPadBottom
 
         Component.onCompleted: refreshBlur()
         onWidthChanged: refreshBlur()
@@ -811,6 +869,9 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
+            /* See setExpanded(): the clip that opens and shuts the text. */
+            height: root.heldBodyH >= 0 ? root.heldBodyH : implicitHeight
+            clip: root.heldBodyH >= 0
             anchors.margins: Style.notifyPadding
             anchors.topMargin: Style.notifyPadTop
             anchors.rightMargin: Style.notifyPadRight
@@ -897,6 +958,10 @@ Item {
             ColumnLayout {
                 id: textCol
                 Layout.fillWidth: true
+                /* Pinned to the top while the clip is moving, so the text
+                   stays put and is uncovered; centred against the icon
+                   otherwise, as before. */
+                Layout.alignment: root.heldBodyH >= 0 ? Qt.AlignTop : Qt.AlignVCenter
                 /* Apple's body line starts 1.5pt below a 16pt title line. */
                 spacing: Style.notifyLinePx > 0 ? 2 : 3
 
@@ -950,7 +1015,7 @@ Item {
                            sender. */
                         font.bold: !Appearance.notifyHeader.includes("appname")
                         wrapMode: Text.WordWrap
-                        maximumLineCount: root.expanded ? 6 : 2
+                        maximumLineCount: root.textOpen ? 6 : 2
                         elide: Text.ElideRight
                     }
 
@@ -1050,7 +1115,7 @@ Item {
                     lineHeightMode: Style.notifyLinePx > 0 ? Text.FixedHeight : Text.ProportionalHeight
                     lineHeight: Style.notifyLinePx > 0 ? Style.notifyLinePx : 1.0
                     wrapMode: Text.WordWrap
-                    maximumLineCount: root.expanded ? root.expandedLines : Appearance.bodyLines
+                    maximumLineCount: root.textOpen ? root.expandedLines : Appearance.bodyLines
                     elide: Text.ElideRight
                     textFormat: Text.StyledText
 
@@ -1068,7 +1133,7 @@ Item {
                         width: 20
                         height: 16
                         radius: 8
-                        visible: root.pointerOn && (bodyText.truncated || root.expanded)
+                        visible: root.pointerOn && (bodyText.truncated || root.textOpen)
                                  && !NotificationModel.screenLocked
                         color: expanderArea.containsMouse ? Style.controlFillHover : Style.opaque(Style.cardBackground)
                         border.color: Style.controlEdge
@@ -1089,7 +1154,7 @@ Item {
                             anchors.fill: parent
                             anchors.margins: -4
                             hoverEnabled: true
-                            onClicked: root.expanded = !root.expanded
+                            onClicked: root.setExpanded(!root.expanded)
                         }
                     }
                 }

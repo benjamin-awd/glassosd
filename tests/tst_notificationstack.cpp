@@ -633,8 +633,27 @@ private Q_SLOTS:
         QTest::mouseMove(m_win, at);
         QTest::mouseClick(m_win, Qt::LeftButton, Qt::NoModifier, at);
         QTRY_VERIFY(card->property("expanded").toBool());
-        QTRY_VERIFY(card->height() > before + 20);
+        /* It opens over several frames rather than in one jump. */
+        QList<qreal> heights;
+        QTRY_VERIFY_WITH_TIMEOUT([&] {
+            heights << card->height();
+            return card->property("heldBodyH").toReal() < 0 && card->height() > before + 20;
+        }(), 3000);
+        const qreal opened = card->height();
+        QVERIFY2(std::any_of(heights.cbegin(), heights.cend(),
+                             [&](qreal h) { return h > before + 1 && h < opened - 1; }),
+                 "no frame between folded and opened");
         QCOMPARE(m_model->rowCount(), 1);
+
+        /* And closes the same way, folding the text only once shut. The
+           chevron has moved down with the opened text. */
+        const QPoint shut = expander->mapToScene(QPointF(expander->width() / 2, expander->height() / 2)).toPoint();
+        QTest::mouseMove(m_win, shut);
+        QTest::mouseClick(m_win, Qt::LeftButton, Qt::NoModifier, shut);
+        QTRY_VERIFY(!card->property("expanded").toBool());
+        QVERIFY(card->property("textOpen").toBool());
+        QTRY_VERIFY(!card->property("textOpen").toBool());
+        QTRY_COMPARE(card->height(), before);
     }
 
     /* A group opens in place the way macOS opens a stack: a click on the
