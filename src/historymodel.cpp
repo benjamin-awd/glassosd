@@ -219,6 +219,8 @@ QVariant HistoryModel::data(const QModelIndex &index, int role) const
     case GroupKeyRole:   return r.groupKey;
     case GroupCountRole: return r.count;
     case CollapsedRole:  return r.collapsed;
+    case StackDepthRole: return r.stackDepth;
+    case GroupStartRole: return r.groupStart;
     case AppNameRole:    return r.header ? r.appName : r.entry.appName;
     /* Must be answered here: header rows return early below, so a case in
        the entry switch is unreachable for exactly the rows that need it. */
@@ -346,6 +348,8 @@ QHash<int, QByteArray> HistoryModel::roleNames() const
         {GroupKeyRole, "groupKey"},
         {GroupCountRole, "groupCount"},
         {CollapsedRole, "collapsed"},
+        {StackDepthRole, "stackDepth"},
+        {GroupStartRole, "groupStart"},
     };
 }
 
@@ -635,23 +639,32 @@ void HistoryModel::rebuild()
             occurrences += qMax(1, it.repeatCount);
         }
 
-        /* A group of one gets no header. The header exists to say "these N
-           belong together and here is how to collapse them"; with a single
-           entry it says nothing the entry does not already say, and a column
-           of one-item headers is most of the panel's vertical space spent on
-           repeating each app's name directly above itself. The entry still
-           carries the app icon, so nothing is lost.
-
-           One arrival, though, not one row. A deduplicated row is a group of
-           one by row count while standing for many notifications, and dropping
-           its header left it looking like a member of whatever group happened
-           to be above it — a x156 battery warning reading as part of the app
-           listed overhead. If it represents more than one arrival it keeps its
-           header and its own name. */
-        if (items.size() == 1 && occurrences == 1) {
+        /* A group of one is a card on its own: no header. A deduplicated
+           row standing for many arrivals used to keep a header so it would
+           not read as part of the group above it; every group is now its
+           own card or stack, spaced from the next, and the card says x156
+           itself. */
+        if (items.size() == 1) {
             Row row;
             row.groupKey = key;
             row.entry = items.first();
+            row.count = occurrences;
+            m_rows.append(row);
+            continue;
+        }
+
+        /* Folded, a group is a stack, as in macOS Notification Centre: its
+           newest entry on top with sheets beneath, and no header. It opens
+           in place (toggleGroup) into a header and every entry. It used to
+           be a header over the newest row, which read as a list of app names
+           with a sample under each, not as a pile of notifications. */
+        if (collapsed) {
+            Row row;
+            row.groupKey = key;
+            row.entry = newest;
+            row.count = occurrences;
+            row.collapsed = true;
+            row.stackDepth = int(qMin<qsizetype>(2, items.size() - 1));
             m_rows.append(row);
             continue;
         }
@@ -660,30 +673,16 @@ void HistoryModel::rebuild()
         header.header = true;
         header.groupKey = key;
         header.appName = newest.appName;          // same app throughout the group
-        header.icon = newest.appIcon;             // so a collapsed group is scannable
+        header.icon = newest.appIcon;
         /* The number of notifications, which is what the user counts — not
            the number of rows we chose to draw them in. */
         header.count = occurrences;
-        header.collapsed = collapsed;
         m_rows.append(header);
-
-        /* A collapsed group still shows its newest entry rather than nothing.
-           Hiding every entry turned the centre into a list of app names with
-           no content — a table of contents, not history. Showing the latest
-           one keeps a busy day readable without making a quiet one look
-           collapsed at all, which is what macOS does with a notification
-           stack. The header's count and chevron still reveal the rest. */
-        if (collapsed) {
-            Row row;
-            row.groupKey = key;
-            row.entry = newest;
-            m_rows.append(row);
-            continue;
-        }
         for (const Notification &n : items) {
             Row row;
             row.groupKey = key;
             row.entry = n;
+            row.groupStart = false;
             m_rows.append(row);
         }
     }
@@ -706,6 +705,11 @@ bool HistoryModel::isCollapsed(const QString &key, const QString &appName, int c
     }
     if (m_collapsed.contains(key)) {
         return true;
+    }
+    /* Drilled into one app, or searching: the point is to see the entries,
+       and a stack would hide all but one of the matches. */
+    if (!m_filter.isEmpty() || !m_search.isEmpty()) {
+        return false;
     }
     if (m_alwaysCollapsed.contains(appName)) {
         return true;
@@ -774,6 +778,7 @@ QVariantMap HistoryModel::rowInfo(int row) const
         {QStringLiteral("isHeader"), r.header},
         {QStringLiteral("groupKey"), r.groupKey},
         {QStringLiteral("collapsed"), r.collapsed},
+        {QStringLiteral("stacked"), r.stackDepth > 0},
         {QStringLiteral("id"), r.header ? 0u : r.entry.id},
     };
 }
@@ -785,8 +790,8 @@ void HistoryModel::toggleGroup(const QString &key)
        rebuild() decides on rows: a group of two rows standing for three
        arrivals showed open, read as folded here, and took a second press. */
     for (const Row &r : std::as_const(m_rows)) {
-        if (r.header && r.groupKey == key) {
-            setGroupFolded(key, !r.collapsed);
+        if ((r.header || r.stackDepth > 0) && r.groupKey == key) {
+            setGroupFolded(key, !r.collapsed);   // a header is open, a stack folded
             return;
         }
     }

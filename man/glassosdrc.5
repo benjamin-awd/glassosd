@@ -49,7 +49,10 @@ How many notifications from one application within how long collapse into a
 single card. Defaults 3 and 20000.
 .TP
 .B AutoCollapseOver
-Group size at which the notification centre opens a group folded. Default 3.
+A group in the notification centre with more notifications than this opens
+folded, as a stack of cards; click it, or press Return or Right, to open it.
+1 stacks every group, as macOS does. Default 3. A search, or the centre drilled
+into one application, opens every group.
 .TP
 .B IdleThresholdMs
 How long without input before the daemon considers you away. Default 120000.

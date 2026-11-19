@@ -756,6 +756,18 @@ Window {
                                     return
                                 }
                             }
+                            /* A group changed form under the cursor: its
+                               header folded into a stack, or its stack opened
+                               under a header. Still the same group. */
+                            if (cursorKey.isHeader || cursorKey.stacked) {
+                                for (let r = 0; r < count; ++r) {
+                                    const i = HistoryModel.rowInfo(r)
+                                    if ((i.isHeader || i.stacked) && i.groupKey === cursorKey.groupKey) {
+                                        setCursor(r)
+                                        return
+                                    }
+                                }
+                            }
                             /* Gone, and not by a key here: something else took
                                it (a popup's group cleared, the capacity). The
                                row that took its place is not what was chosen,
@@ -797,7 +809,8 @@ Window {
                            the cursor to the header, since the entry it was on
                            may just have been folded away. */
                         function setGroupCollapsed(collapse) {
-                            const h = headerRowFor(cursor)
+                            /* A stack is its own group's row. */
+                            const h = HistoryModel.rowInfo(cursor).stacked ? cursor : headerRowFor(cursor)
                             if (h < 0)
                                 return
                             const info = HistoryModel.rowInfo(h)
@@ -841,7 +854,9 @@ Window {
                                 keyNav = true
                                 if (cursor < 0)
                                     break
-                                if (cursorKey.isHeader) {
+                                /* A header folds its group and a stack opens,
+                                   as a click on either does. */
+                                if (cursorKey.isHeader || cursorKey.stacked) {
                                     HistoryModel.toggleGroup(cursorKey.groupKey)
                                 } else {
                                     /* What a click does, close included: the
@@ -921,6 +936,14 @@ Window {
                         Layout.fillHeight: true
                         clip: true
                         spacing: 6
+                        /* Room for a card's corner close button, which hangs
+                           half off its top-left corner as on a popup: the
+                           list reaches into the panel's padding by as much as
+                           it insets its rows, so the cards still line up with
+                           the search field above. */
+                        Layout.leftMargin: -12
+                        leftMargin: 12
+                        topMargin: 12
                         /* Detached while the centre is shut. HistoryModel resets on
                            every notification, and a list still bound to it rebuilt
                            its delegates (icons and all) on the frame each new card
@@ -1042,274 +1065,63 @@ Window {
                             }
                         }
 
-                        delegate: Loader {
+                        /* Each row is a card as the popup draws it, a folded
+                           group a stack of them, an open group a header above
+                           its cards (CentreCard, CentreGroupHeader). Groups
+                           are spaced apart, so where one ends is never in
+                           doubt: a lone card used to read as part of the
+                           group listed above it. */
+                        delegate: Item {
+                            id: rowItem
                             required property int index
                             required property var model
-                            width: ListView.view.width
-                            sourceComponent: model.isHeader ? groupHeader : entryCard
+                            readonly property bool onCursor:
+                                list.keyNav && list.activeFocus && list.cursor === index
+                            readonly property int gap: model.groupStart && index > 0 ? 8 : 0
+                            width: ListView.view.width - list.leftMargin - list.rightMargin
+                            height: gap + (rowLoader.item ? rowLoader.item.implicitHeight : 0)
 
-                            // ---- group header ----
+                            Loader {
+                                id: rowLoader
+                                y: rowItem.gap
+                                width: parent.width
+                                sourceComponent: rowItem.model.isHeader ? headerRow : cardRow
+                            }
+
                             Component {
-                                id: groupHeader
-                                Item {
-                                    width: parent ? parent.width : 0
-                                    height: 30
-                                    readonly property bool current:
-                                        list.keyNav && list.activeFocus && list.cursor === index
-
-                                    /* The keyboard highlight. A header has no
-                                       card of its own to colour, so it gets
-                                       the hovered card's fill and the same
-                                       accent hairline the entries use — one
-                                       look for "the keyboard is here",
-                                       whichever kind of row it is on. */
-                                    Rectangle {
-                                        anchors.fill: parent
-                                        radius: Style.cardRadius - 2
-                                        color: Style.entryCardHover
-                                        border.width: 1
-                                        border.color: Qt.rgba(Style.accent.r, Style.accent.g,
-                                                              Style.accent.b, 0.55)
-                                        opacity: parent.current ? 1 : 0
-                                        Behavior on opacity { NumberAnimation { duration: 110 } }
-                                    }
-
-                                    RowLayout {
-                                        anchors.fill: parent
-                                        anchors.leftMargin: 2
-                                        spacing: 6
-
-                                        // Chevron rotates to show collapse state
-                                        Text {
-                                            text: "▾"
-                                            color: Style.foregroundDim
-                                            font.pointSize: Style.fontSize - 1
-                                            rotation: model.collapsed ? -90 : 0
-                                            Behavior on rotation {
-                                                NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
-                                            }
-                                        }
-
-                                        /* The app's icon beside its name. A collapsed
-                                           group is otherwise a bare word, and a column
-                                           of bare words is far slower to scan than a
-                                           column of icons — which is the whole point
-                                           of collapsing in the first place. */
-                                        Image {
-                                            Layout.preferredWidth: 16
-                                            Layout.preferredHeight: 16
-                                            visible: model.headerIcon !== ""
-                                            source: model.headerIcon
-                                            sourceSize: Qt.size(48, 48)
-                                            fillMode: Image.PreserveAspectFit
-                                            smooth: true
-                                            mipmap: true
-                                        }
-
-                                        Text {
-                                            text: model.appName
-                                            textFormat: Text.PlainText    // app_name is not markup and is not sanitised
-                                            color: Style.foregroundMuted
-                                            font.family: Style.fontFamily
-                                            font.pointSize: Style.fontSize - 2
-                                            font.capitalization: Font.AllUppercase
-                                            font.letterSpacing: 0.9
-                                            font.bold: true
-                                            elide: Text.ElideRight
-                                        }
-
-                                        Rectangle {
-                                            Layout.preferredWidth: cnt.implicitWidth + 12
-                                            Layout.preferredHeight: cnt.implicitHeight + 3
-                                            radius: height / 2
-                                            color: Qt.rgba(1, 1, 1, 0.10)
-                                            Text {
-                                                id: cnt
-                                                anchors.centerIn: parent
-                                                text: model.groupCount
-                                                color: Style.foregroundDim
-                                                font.family: Style.fontFamily
-                                                font.pointSize: Style.fontSize - 3
-                                                font.bold: true
-                                            }
-                                        }
-
-                                        Item { Layout.fillWidth: true }
-
-                                        /* Drills into the app, which is where its
-                                           settings live. Reachable from the centre
-                                           itself, not only from a live popup. */
-                                        CardButton {
-                                            icon: "settings"
-                                            onActivated: HistoryModel.showGroup(model.groupKey, true)
-                                        }
-
-                                        CardButton {
-                                            icon: "close"
-                                            onActivated: HistoryModel.clearGroup(model.groupKey)
-                                        }
-                                    }
-
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        anchors.rightMargin: 62   // leave the gear and clear buttons clickable
-                                        onClicked: HistoryModel.toggleGroup(model.groupKey)
-                                    }
+                                id: headerRow
+                                CentreGroupHeader {
+                                    appName: rowItem.model.appName
+                                    icon: rowItem.model.headerIcon
+                                    current: rowItem.onCursor
+                                    onFoldRequested: HistoryModel.toggleGroup(rowItem.model.groupKey)
+                                    onClearRequested: HistoryModel.clearGroup(rowItem.model.groupKey)
+                                    onSettingsRequested: HistoryModel.showGroup(rowItem.model.groupKey, true)
                                 }
                             }
 
-                            // ---- entry card ----
                             Component {
-                                id: entryCard
-                                Rectangle {
-                                    id: entryCardRoot
-                                    width: parent ? parent.width : 0
-                                    /* Style.padding, not a hardcoded 20. The
-                                       entries were noticeably tighter than the
-                                       popups showing the same notification, and
-                                       got relatively tighter still as Scale went
-                                       up, because the padding here never scaled
-                                       with anything while the text did. */
-                                    height: entryBody.implicitHeight + Style.padding * 2
-                                    radius: Style.cardRadius - 2
-                                    /* The keyboard highlight is the hover
-                                       look plus an accent hairline: the fill
-                                       alone is too faint to find again after
-                                       looking away, and a full accent ring
-                                       would shout on a panel where nothing
-                                       else does. */
-                                    readonly property bool current:
-                                        list.keyNav && list.activeFocus && list.cursor === index
-                                    color: entryHover.containsMouse || current
-                                           ? Style.entryCardHover : Style.entryCard
-                                    border.color: current ? Qt.rgba(Style.accent.r, Style.accent.g,
-                                                                    Style.accent.b, 0.55)
-                                                          : Style.entryCardEdge
-                                    border.width: 1
-                                    Behavior on color { ColorAnimation { duration: 110 } }
-                                    Behavior on border.color { ColorAnimation { duration: 110 } }
-
-                                    MouseArea {
-                                        id: entryHover
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
-                                        acceptedButtons: Qt.LeftButton | Qt.MiddleButton
-                                        onClicked: (mouse) => {
-                                            if (mouse.button === Qt.MiddleButton) {
-                                                HistoryModel.removeAt(index)
-                                                return
-                                            }
-                                            /* Same gesture as a popup: open the thing
-                                               the notification was about. For a live
-                                               notification that is its default action;
-                                               for one that has expired the sender is
-                                               gone, so it falls back to launching the
-                                               application. */
-                                            HistoryModel.activateEntry(index)
-                                            HistoryModel.panelOpen = false
-                                        }
+                                id: cardRow
+                                CentreCard {
+                                    row: rowItem.model
+                                    current: rowItem.onCursor
+                                    /* Same gesture as a popup: open the thing
+                                       it was about (its default action while
+                                       live, else its app), and get out of the
+                                       way of the window that brings up. */
+                                    onActivated: {
+                                        HistoryModel.activateEntry(rowItem.index)
+                                        HistoryModel.panelOpen = false
                                     }
-
-                                    RowLayout {
-                                        id: entryBody
-                                        anchors.left: parent.left
-                                        anchors.right: parent.right
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        anchors.leftMargin: Style.padding
-                                        anchors.rightMargin: Math.round(Style.padding * 0.7)
-                                        spacing: Math.round(Style.padding * 0.8)
-
-                                        Image {
-                                            Layout.preferredWidth: Style.notifyIconSize - 4
-                                            Layout.preferredHeight: Style.notifyIconSize - 4
-                                            Layout.alignment: Qt.AlignTop
-                                            visible: model.iconSource !== ""
-                                            source: model.iconSource
-                                            sourceSize: Qt.size(78, 78)
-                                            fillMode: Image.PreserveAspectFit
-                                            smooth: true
-                                            mipmap: true
-                                        }
-
-                                        ColumnLayout {
-                                            Layout.fillWidth: true
-                                            spacing: 3
-
-                                            /* Same two sizes the popup uses for
-                                               the same two strings. They used to
-                                               be a step smaller each, so the
-                                               centre read as a cramped version of
-                                               the notification rather than as the
-                                               same notification. The centre is the
-                                               surface you actually *read* — it has
-                                               no business being the smaller of the
-                                               two. */
-                                            Text {
-                                                Layout.fillWidth: true
-                                                text: model.summary
-                                                textFormat: Text.StyledText
-                                                color: Style.foreground
-                                                font.family: Style.fontFamily
-                                                font.pointSize: Style.fontSize
-                                                font.bold: true
-                                                elide: Text.ElideRight
-                                            }
-
-                                            Text {
-                                                Layout.fillWidth: true
-                                                visible: text !== ""
-                                                text: model.body
-                                                textFormat: Text.StyledText   // same rendering as the popup; the daemon sanitises it
-                                                color: Style.foregroundDim
-                                                font.family: Style.fontFamily
-                                                font.pointSize: Style.fontSize - 1
-                                                wrapMode: Text.WordWrap
-                                                maximumLineCount: Appearance.centreBodyLines
-                                                elide: Text.ElideRight
-                                            }
-                                        }
-
-                                        ColumnLayout {
-                                            Layout.alignment: Qt.AlignTop
-                                            spacing: 2
-
-                                            Text {
-                                                Layout.alignment: Qt.AlignRight
-                                                text: model.when
-                                                color: Style.foregroundDim
-                                                font.family: Style.fontFamily
-                                                font.pointSize: Style.fontSize - 3
-                                            }
-
-                                            /* How many times this exact message
-                                               arrived. History keeps one row and
-                                               counts, rather than a row each —
-                                               without the count the collapse
-                                               would be silent, and "it happened
-                                               129 times" is the interesting part
-                                               of a repeating warning. */
-                                            Text {
-                                                Layout.alignment: Qt.AlignRight
-                                                visible: (model.repeatCount || 1) > 1
-                                                text: "×" + model.repeatCount
-                                                color: Style.foregroundDim
-                                                font.family: Style.fontFamily
-                                                font.pointSize: Style.fontSize - 3
-                                            }
-
-                                            CardButton {
-                                                Layout.alignment: Qt.AlignRight
-                                                /* Shown on the keyboard's row too, as
-                                                   the hint that Delete does what it
-                                                   does. */
-                                                opacity: entryHover.containsMouse || entryCardRoot.current ? 1 : 0
-                                                Behavior on opacity { NumberAnimation { duration: 110 } }
-                                                icon: "close"
-                                                onActivated: HistoryModel.removeAt(index)
-                                            }
-                                        }
+                                    /* A stack's X clears its group, as in
+                                       Notification Centre; a card's, itself. */
+                                    onRemoved: {
+                                        if (rowItem.model.stackDepth > 0)
+                                            HistoryModel.clearGroup(rowItem.model.groupKey)
+                                        else
+                                            HistoryModel.removeAt(rowItem.index)
                                     }
+                                    onExpandRequested: HistoryModel.toggleGroup(rowItem.model.groupKey)
                                 }
                             }
                         }

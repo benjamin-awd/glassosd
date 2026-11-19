@@ -12,6 +12,8 @@ singleton Modules 1.0 Modules.qml
 singleton Theme 1.0 Theme.qml
 singleton SystemControls 1.0 SystemControls.qml
 HistoryPanel 1.0 HistoryPanel.qml
+CentreCard 1.0 CentreCard.qml
+CentreGroupHeader 1.0 CentreGroupHeader.qml
 GlassPanel 1.0 GlassPanel.qml
 CardButton 1.0 CardButton.qml
 PanelButton 1.0 PanelButton.qml

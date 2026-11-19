@@ -199,13 +199,13 @@ private Q_SLOTS:
         }
         QCOMPARE(h.total(), 1);
 
-        /* One arrival is one row with no header; three arrivals keep the
-           header, so the row cannot be read as belonging to the group above
-           it. That is the whole reason the count is occurrences, not rows. */
-        QCOMPARE(h.rowCount(), 2);
-        QVERIFY(h.index(0).data(HistoryModel::IsHeaderRole).toBool());
+        /* One card, which says x3 itself: every group is its own card or
+           stack now, so it no longer needs a header to keep it from reading
+           as part of the group above. The count is still occurrences. */
+        QCOMPARE(h.rowCount(), 1);
+        QVERIFY(!h.index(0).data(HistoryModel::IsHeaderRole).toBool());
         QCOMPARE(h.index(0).data(HistoryModel::GroupCountRole).toInt(), 3);
-        QCOMPARE(h.index(1).data(HistoryModel::RepeatCountRole).toInt(), 3);
+        QCOMPARE(h.index(0).data(HistoryModel::RepeatCountRole).toInt(), 3);
     }
 
     /* One toggle folds a group, whatever its repeats. toggleGroup worked
@@ -258,6 +258,39 @@ private Q_SLOTS:
         QVERIFY(h.ageTickActiveForTesting());
         h.setPanelOpen(false);
         QVERIFY(!h.ageTickActiveForTesting());
+    }
+
+    /* A folded group is a stack: its newest entry, no header, sheets for
+       up to two more; opening it gives a header and every entry. Searching
+       or drilling into the app opens it, so no match is hidden under it. */
+    void aFoldedGroupIsAStack()
+    {
+        clearStore();
+        HistoryModel h;
+        h.setAutoCollapseOver(1);
+        for (int i = 0; i < 4; ++i) {
+            h.record(note(QStringLiteral("Mail"), QStringLiteral("m%1").arg(i)));
+        }
+        h.record(note(QStringLiteral("Chat"), QStringLiteral("alone")));
+        QCOMPARE(h.rowCount(), 2);   // the chat card, the mail stack
+        QCOMPARE(h.index(0).data(HistoryModel::StackDepthRole).toInt(), 0);
+        QCOMPARE(h.index(1).data(HistoryModel::StackDepthRole).toInt(), 2);
+        QCOMPARE(h.index(1).data(HistoryModel::GroupCountRole).toInt(), 4);
+        QCOMPARE(h.index(1).data(HistoryModel::SummaryRole).toString(), QStringLiteral("m3"));
+        QVERIFY(h.index(1).data(HistoryModel::GroupStartRole).toBool());
+        const QString mail = h.index(1).data(HistoryModel::GroupKeyRole).toString();
+
+        h.setSearch(QStringLiteral("m"));
+        QCOMPARE(h.rowCount(), 5);   // header and every match
+        h.setSearch(QString());
+        QCOMPARE(h.rowCount(), 2);
+
+        h.toggleGroup(mail);
+        QCOMPARE(h.rowCount(), 6);   // chat, header, four entries
+        QVERIFY(h.index(1).data(HistoryModel::IsHeaderRole).toBool());
+        QVERIFY(!h.index(3).data(HistoryModel::GroupStartRole).toBool());
+        h.toggleGroup(mail);
+        QCOMPARE(h.rowCount(), 2);
     }
 
     /* The rest of a popup's group, for opening it on the card: newest
@@ -555,8 +588,8 @@ private Q_SLOTS:
         HistoryModel reloaded;
         QCOMPARE(reloaded.total(), 2);
         reloaded.setSearch(QStringLiteral("Low"));
-        QCOMPARE(reloaded.rowCount(), 2);   // header, then the entry
-        QCOMPARE(reloaded.index(1).data(HistoryModel::RepeatCountRole).toInt(), 2);
+        QCOMPARE(reloaded.rowCount(), 1);   // one card, x2
+        QCOMPARE(reloaded.index(0).data(HistoryModel::RepeatCountRole).toInt(), 2);
     }
 
     /* A save interrupted part way — power cut, full disk, a kill during the

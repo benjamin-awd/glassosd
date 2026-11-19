@@ -166,7 +166,8 @@ target_compile_definitions(tst_notificationstack PRIVATE
 # centre's extra stand-ins from tests/qml/centre, and that directory's qmldir.
 set(GLASSOSD_CENTRE_TEST_MODULE ${CMAKE_CURRENT_BINARY_DIR}/qmlimports-centre/org/glassosd/ui)
 set(GLASSOSD_CENTRE_QML_UNDER_TEST
-    HistoryPanel.qml GlassPanel.qml CardButton.qml PanelButton.qml Toggle.qml
+    HistoryPanel.qml CentreCard.qml CentreGroupHeader.qml GlassPanel.qml CardButton.qml
+    PanelButton.qml Toggle.qml
     SliderRow.qml ButtonsGrid.qml Style.qml Icons.qml)
 set(_centre_copy_cmds)
 foreach(f IN LISTS GLASSOSD_CENTRE_QML_UNDER_TEST)

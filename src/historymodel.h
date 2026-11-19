@@ -70,6 +70,8 @@ public:
         CollapsedRole,
         HeaderIconRole,
         RepeatCountRole,
+        StackDepthRole,
+        GroupStartRole,
     };
     Q_ENUM(Roles)
 
@@ -206,6 +208,12 @@ private:
         QString icon;
         int count = 0;
         bool collapsed = false;
+        /* A folded group: its newest entry drawn as the top card of a stack,
+           with this many sheets beneath (0 for anything else). */
+        int stackDepth = 0;
+        /* The first row of a group (its header, its stack, or a lone entry),
+           which the centre spaces from the group above. */
+        bool groupStart = true;
         Notification entry;
     };
     QList<Row> m_rows;

@@ -338,6 +338,54 @@ private Q_SLOTS:
         QCOMPARE(m_model->total(), 3);
     }
 
+    /* A folded group is a stack, as in Notification Centre: a click opens
+       it (rather than opening whichever message is on top), and its X
+       clears the group. */
+    void aStackOpensOnAClickAndClearsOnItsX()
+    {
+        m_model->setAutoCollapseOver(1);
+        QTRY_COMPARE(list()->property("count").toInt(), 2);   // chat, mail stack
+        auto stack = [this]() -> QQuickItem * {
+            QQuickItem *found = nullptr;
+            std::function<void(QQuickItem *)> walk = [&](QQuickItem *it) {
+                for (QQuickItem *c : it->childItems()) {
+                    if (!found && QByteArray(c->metaObject()->className()).startsWith("CentreCard")
+                        && c->property("stacked").toBool()) {
+                        found = c;
+                    }
+                    walk(c);
+                }
+            };
+            walk(m_win->contentItem());
+            return found;
+        };
+        QTRY_VERIFY(stack());
+        QQuickItem *card = stack();
+        const QPoint mid = card->mapToScene(QPointF(card->width() / 2, 20)).toPoint();
+        QTest::mouseMove(m_win, mid);
+        QTest::mouseClick(m_win, Qt::LeftButton, Qt::NoModifier, mid);
+        QCOMPARE(m_model->rowCount(), 4);              // chat, header, two entries
+        QVERIFY(m_model->panelOpen());                 // opened in place, nothing launched
+        QVERIFY(m_model->rowInfo(1).value(QStringLiteral("isHeader")).toBool());
+
+        m_model->toggleGroup(m_model->rowInfo(1).value(QStringLiteral("groupKey")).toString());
+        QTRY_VERIFY(stack());
+        card = stack();
+        QTest::mouseMove(m_win, card->mapToScene(QPointF(card->width() / 2, 20)).toPoint());
+        QQuickItem *x = nullptr;
+        for (QQuickItem *c : card->childItems()) {
+            if (c->property("icon").toString() == QStringLiteral("close")) {
+                x = c;
+            }
+        }
+        QVERIFY(x);
+        QTRY_VERIFY(x->isVisible());
+        const QPoint onX = x->mapToScene(QPointF(x->width() / 2, x->height() / 2)).toPoint();
+        QTest::mouseMove(m_win, onX);
+        QTest::mouseClick(m_win, Qt::LeftButton, Qt::NoModifier, onX);
+        QCOMPARE(m_model->total(), 1);                 // the mail group went, chat stayed
+    }
+
     void returnOnHeaderTogglesTheGroup()
     {
         key(Qt::Key_Down);

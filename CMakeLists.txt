@@ -80,6 +80,8 @@ qt_add_qml_module(glassosd
         qml/CardButton.qml
         qml/CardStackSurface.qml
         qml/MemberCard.qml
+        qml/CentreCard.qml
+        qml/CentreGroupHeader.qml
         qml/CardMenu.qml
         qml/CardReply.qml
         qml/CardActions.qml
