@@ -133,14 +133,19 @@ void SystemControls::refresh()
     m_oldVolAvail = m_volumeAvailable;
     m_oldBriAvail = m_brightnessAvailable;
     m_refreshPending = 0;
+    /* Which slider moves this reading predates. One taken before a set
+       landed after it and put the old level back (see readingIsStale()). */
+    const quint64 volGen = m_volumeGen, briGen = m_brightnessGen;
 
     if (m_volumeTool == QLatin1String("wpctl")) {
         ++m_refreshPending;
         // "Volume: 0.35" or "Volume: 0.35 [MUTED]"
-        runAsync(QStringLiteral("wpctl get-volume @DEFAULT_AUDIO_SINK@"), [this](const QString &out) {
+        runAsync(QStringLiteral("wpctl get-volume @DEFAULT_AUDIO_SINK@"), [this, volGen](const QString &out) {
             static const QRegularExpression re(QStringLiteral("Volume:\\s*([0-9.]+)"));
             const auto m = re.match(out);
-            if (m.hasMatch()) {
+            if (volumeReadingIsStale(volGen)) {
+                // the slider's value stands; a fresh read follows the write
+            } else if (m.hasMatch()) {
                 m_volume = qBound(0.0, m.captured(1).toDouble(), 1.0);
                 m_muted = out.contains(QLatin1String("MUTED"));
                 m_volumeAvailable = true;
@@ -152,10 +157,12 @@ void SystemControls::refresh()
     } else if (m_volumeTool == QLatin1String("pactl")) {
         ++m_refreshPending;
         runAsync(QStringLiteral("pactl get-sink-volume @DEFAULT_SINK@; echo; pactl get-sink-mute @DEFAULT_SINK@"),
-                 [this](const QString &out) {
+                 [this, volGen](const QString &out) {
             static const QRegularExpression re(QStringLiteral("(\\d+)%"));
             const auto m = re.match(out);
-            if (m.hasMatch()) {
+            if (volumeReadingIsStale(volGen)) {
+                // as above
+            } else if (m.hasMatch()) {
                 m_volume = qBound(0.0, m.captured(1).toDouble() / 100.0, 1.0);
                 m_muted = out.contains(QLatin1String("Mute: yes"));
                 m_volumeAvailable = true;
@@ -169,12 +176,14 @@ void SystemControls::refresh()
     if (!m_brightnessTool.isEmpty()) {
         ++m_refreshPending;
         /* One call: -m prints device,class,current,percent,max. */
-        runAsync(QStringLiteral("brightnessctl -m"), [this](const QString &out) {
+        runAsync(QStringLiteral("brightnessctl -m"), [this, briGen](const QString &out) {
             const QStringList f = out.section(QLatin1Char('\n'), 0, 0).split(QLatin1Char(','));
             bool okc = false, okm = false;
             const double c = f.value(2).toDouble(&okc);
             const double mx = f.value(4).toDouble(&okm);
-            if (okc && okm && mx > 0) {
+            if (readingIsStale(briGen, m_brightnessGen, m_brightnessSending, m_brightnessTarget)) {
+                // as for volume
+            } else if (okc && okm && mx > 0) {
                 m_brightness = qBound(0.0, c / mx, 1.0);
                 m_brightnessAvailable = true;
             } else {
@@ -186,6 +195,39 @@ void SystemControls::refresh()
 
     if (m_refreshPending == 0) {
         m_refreshing = false;
+    }
+}
+
+bool SystemControls::readingIsStale(quint64 gen, quint64 current, bool sending, int target)
+{
+    /* Taken before the slider last moved, or while a set is still on its
+       way: either way it may hold the level from before, and applying it
+       snapped the slider back (or, when it matched the refresh's own
+       snapshot, silently left the model disagreeing with the slider). The
+       slider's value stands. Something may still have changed outside, so
+       read again: after the write lands if one is in flight, else at once. */
+    if (gen == current && !sending && target < 0) {
+        return false;
+    }
+    if (sending || target >= 0) {
+        m_rereadAfterSend = true;
+    } else {
+        m_refreshAgain = true;
+    }
+    return true;
+}
+
+bool SystemControls::volumeReadingIsStale(quint64 gen)
+{
+    return readingIsStale(gen, m_volumeGen, m_volumeSending, m_volumeTarget);
+}
+
+void SystemControls::rereadIfIdle()
+{
+    if (m_rereadAfterSend && !m_volumeSending && m_volumeTarget < 0
+        && !m_brightnessSending && m_brightnessTarget < 0) {
+        m_rereadAfterSend = false;
+        refresh();
     }
 }
 
@@ -213,6 +255,7 @@ void SystemControls::setVolume(qreal v)
     }
     m_volumeTarget = qBound(0, int(v * 100 + 0.5), 100);
     m_volume = m_volumeTarget / 100.0;
+    ++m_volumeGen;
     Q_EMIT changed();
     sendVolume();
 }
@@ -231,6 +274,7 @@ void SystemControls::sendVolume()
     runAsync(cmd, [this](const QString &) {
         m_volumeSending = false;
         sendVolume();   // the latest value a drag reached while this ran
+        rereadIfIdle();
     });
 }
 
@@ -254,6 +298,7 @@ void SystemControls::setBrightness(qreal v)
        panels that is indistinguishable from the machine having died. */
     m_brightnessTarget = qBound(1, int(v * 100 + 0.5), 100);
     m_brightness = m_brightnessTarget / 100.0;
+    ++m_brightnessGen;
     Q_EMIT changed();
     sendBrightness();
 }
@@ -269,5 +314,6 @@ void SystemControls::sendBrightness()
     runAsync(QStringLiteral("brightnessctl -q set %1%").arg(pct), [this](const QString &) {
         m_brightnessSending = false;
         sendBrightness();
+        rereadIfIdle();
     });
 }

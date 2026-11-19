@@ -93,6 +93,45 @@ private Q_SLOTS:
         QTest::qWait(250);
         QVERIFY(log().count(QStringLiteral("set-volume")) <= 3);
     }
+
+    /* A reading taken before the slider moved does not overwrite where it
+       moved to. A poll in flight landed after setVolume() and put the old
+       level back, and when that matched the poll's own snapshot nothing was
+       even announced: the slider showed 0.80 over a model holding 0.10. */
+    void aStaleReadingDoesNotUndoTheSlider()
+    {
+        const QByteArray state = m_dir.filePath(QStringLiteral("vol")).toUtf8();
+        const QByteArray bri = m_dir.filePath(QStringLiteral("bri")).toUtf8();
+        QFile::remove(QString::fromUtf8(state));
+        QFile::remove(QString::fromUtf8(bri));
+        tool(QStringLiteral("wpctl"),
+             "case \"$1\" in\n"
+             " get-volume) v=$(cat " + state + " 2>/dev/null || echo 0.10); sleep 0.3; echo \"Volume: $v\";;\n"
+             " set-volume) echo \"0.$(echo $3 | tr -d %)\" > " + state + ";;\n"
+             "esac\n");
+        tool(QStringLiteral("brightnessctl"),
+             "case \"$1\" in\n"
+             " -m) b=$(cat " + bri + " 2>/dev/null || echo 10); sleep 0.3; echo \"intel_backlight,backlight,$b,$b%,100\";;\n"
+             " -q) echo \"$3\" | tr -d % > " + bri + ";;\n"
+             "esac\n");
+        SystemControls c;
+        QTRY_VERIFY_WITH_TIMEOUT(c.volumeAvailable() && c.brightnessAvailable(), 3000);
+        QCOMPARE(c.volume(), 0.10);
+        c.refresh();               // reads 0.10, lands 300 ms from now
+        QTest::qWait(50);
+        c.setVolume(0.80);
+        c.setBrightness(0.80);
+        QTest::qWait(600);         // the stale reading has landed
+        QCOMPARE(c.volume(), 0.80);
+        QCOMPARE(c.brightness(), 0.80);
+        /* An outside change after the write still comes through. */
+        QFile f(QString::fromUtf8(state));
+        QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        f.write("0.33\n");
+        f.close();
+        c.refresh();
+        QTRY_COMPARE_WITH_TIMEOUT(c.volume(), 0.33, 2000);
+    }
 };
 
 QTEST_GUILESS_MAIN(TestSystemControls)

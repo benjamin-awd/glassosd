@@ -80,6 +80,11 @@ private:
     bool m_oldMuted = false, m_oldVolAvail = false, m_oldBriAvail = false;
     int m_volumeTarget = -1, m_brightnessTarget = -1;
     bool m_volumeSending = false, m_brightnessSending = false;
+    quint64 m_volumeGen = 0, m_brightnessGen = 0;   // bumped by each set
+    bool m_rereadAfterSend = false;
+    bool readingIsStale(quint64 gen, quint64 current, bool sending, int target);
+    bool volumeReadingIsStale(quint64 gen);
+    void rereadIfIdle();
     void detect();
     void startSubscription();
 
