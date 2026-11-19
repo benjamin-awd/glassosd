@@ -235,6 +235,7 @@ QVariant NotificationModel::roleFor(const Notification &n, int role) const
         return false;
     }
     case GroupKeyRole:   return n.groupKey();
+    case PersistentRole: return n.urgency == Urgency::Critical || n.timeoutMs == 0;
     case ProgressRole:         return n.progressValue;
     case InlineReplyRole:      return n.inlineReply;
     case ReplyPlaceholderRole: return n.replyPlaceholder.isEmpty()
@@ -287,6 +288,7 @@ QHash<int, QByteArray> NotificationModel::roleNames() const
         {HasDefaultActionRole, "hasDefaultAction"},
         {GroupCountRole, "groupCount"},
         {MembersRole, "members"},
+        {PersistentRole, "persistent"},
         {ClosingRole, "closing"},
         {StackTagRole, "stackTag"},
         {GroupKeyRole, "groupKey"},
@@ -741,7 +743,7 @@ uint NotificationModel::insert(Notification n)
     /* Do Not Disturb, or an application asking for quiet, suppresses the popup
        but must never lose the message; history still receives it via the
        closed signal path. */
-    if (quiet()) {
+    if (quiet() || isMuted(n)) {
         Q_EMIT notificationClosed(n.id, CloseReason::Expired);
         return n.id;
     }
@@ -950,6 +952,29 @@ void NotificationModel::snooze(uint id)
        notification coming back later is our behaviour, not a change to the
        one it sent. */
     closeId(id, CloseReason::Dismissed);
+}
+
+void NotificationModel::mute(uint id, int minutes)
+{
+    const Notification *n = find(id);
+    if (!n) {
+        return;
+    }
+    QDateTime until;
+    if (minutes < 0) {
+        /* The end of today, local time: "today" is the user's day. */
+        until = QDateTime(now().toLocalTime().date().addDays(1), QTime(0, 0)).toUTC();
+    } else {
+        until = now().addSecs(qint64(minutes) * 60);
+    }
+    m_mutedUntil.insert(n->groupKey(), until);
+    closeId(id, CloseReason::Dismissed);
+}
+
+bool NotificationModel::isMuted(const Notification &n) const
+{
+    const auto it = m_mutedUntil.constFind(n.groupKey());
+    return it != m_mutedUntil.cend() && now() < it.value();
 }
 
 void NotificationModel::dismiss(uint id)

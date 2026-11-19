@@ -304,6 +304,7 @@ int main(int argc, char *argv[])
         notifications->setCoalesce(g.readEntry("CoalesceThreshold", 3),
                                    g.readEntry("CoalesceWindowMs", 20000));
         notifications->setDoNotDisturb(g.readEntry("DoNotDisturb", false));
+        notifications->setSnoozeMinutes(g.readEntry("SnoozeMinutes", 10));
         notifications->setTimeouts(g.readEntry("TimeoutLow", 4000),
                                    g.readEntry("Timeout", 6000),
                                    g.readEntry("TimeoutCritical", 0));

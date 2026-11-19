@@ -562,6 +562,7 @@ Item {
     signal dismissed()
     signal settingsRequested()
     signal snoozeRequested()
+    signal muteRequested(int minutes)
     signal moreRequested()
     signal memberActivated(int id)
     signal memberDismissed(int id)
@@ -1229,28 +1230,35 @@ Item {
                 }
 
                 // ---- segmented actions --------------------------------------
+                /* On an alert only: one that stays until acted on (critical,
+                   or a timeout of 0). A banner keeps its actions in Options,
+                   as macOS does, so it is not 38px taller with buttons for a
+                   glance that is gone in six seconds. */
                 CardActions {
                     Layout.fillWidth: true
                     Layout.topMargin: 8
-                    visible: root.entry.actions.length > 0
+                    visible: root.entry.actions.length > 0 && root.entry.persistent === true
                     actions: root.entry.actions
                     onTriggered: key => root.actionTriggered(key)
                 }
-            }
-        }
 
-        /* Snooze and settings, opened by right-click or Options. */
-        CardMenu {
-            id: cardMenu
-            anchors.fill: parent
-            z: 5
-            stackTag: root.entry.stackTag
-            leaving: root.leaving
-            onSnoozeRequested: root.snoozeRequested()
-            onSettingsRequested: root.settingsRequested()
-            /* Keeps the dwell paused while open: reaching a row can take the
-               pointer off the card. */
-            onOpenChanged: root.hoverChanged(open || root.pointerOn || root.groupShown)
+                // ---- Options ------------------------------------------------
+                CardMenu {
+                    id: cardMenu
+                    actions: root.entry.actions
+                    showActions: root.entry.persistent !== true
+                    stackTag: root.entry.stackTag
+                    snoozeMinutes: NotificationModel.snoozeMinutes
+                    leaving: root.leaving
+                    onActionTriggered: key => root.actionTriggered(key)
+                    onMuteRequested: minutes => root.muteRequested(minutes)
+                    onSnoozeRequested: root.snoozeRequested()
+                    onSettingsRequested: root.settingsRequested()
+                    /* Keeps the dwell paused while open: reaching a row can
+                       take the pointer off the card. */
+                    onOpenChanged: root.hoverChanged(open || root.pointerOn || root.groupShown)
+                }
+            }
         }
     }
 

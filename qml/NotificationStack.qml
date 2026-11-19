@@ -302,6 +302,7 @@ Window {
                 }
                 onSettingsRequested: HistoryModel.showGroup(model.groupKey, true)
                 onSnoozeRequested: NotificationModel.snooze(model.notifId)
+                onMuteRequested: minutes => NotificationModel.mute(model.notifId, minutes)
             }
         }
 

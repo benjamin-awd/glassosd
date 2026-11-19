@@ -44,6 +44,9 @@ class NotificationModel : public QAbstractListModel
        stack sets it so the newest card is always nearest the anchored corner,
        as macOS stacks its banners: top-anchored stacks put it first. */
     Q_PROPERTY(bool newestFirst READ newestFirst WRITE setNewestFirst)
+    /* How long "Remind me" defers a notification, for the Options label.
+       SnoozeStore reads the same SnoozeMinutes key. */
+    Q_PROPERTY(int snoozeMinutes READ snoozeMinutes NOTIFY snoozeMinutesChanged)
 
 public:
     enum Roles {
@@ -67,6 +70,7 @@ public:
         BadgeSourceRole,
         RealActionsRole,   // the actions with their real labels, for data() itself
         MembersRole,       // a group's other live notifications, as maps, newest first
+        PersistentRole,    // stays until acted on (critical, or timeout 0): an alert, not a banner
     };
     Q_ENUM(Roles)
 
@@ -154,6 +158,22 @@ public:
        meets the rules, coalescing and the queue on the way in. */
     Q_INVOKABLE void snooze(uint id);
     Q_INVOKABLE void dismiss(uint id);                       // user clicked away
+    /* Options' "Mute for 1 hour" / "Mute for today" (minutes < 0): this
+       card goes, and the app's popups are held back until then, as Do Not
+       Disturb holds everyone's: still recorded in history, still told they
+       closed. In memory only; a restart ends it, which errs towards being
+       told. */
+    Q_INVOKABLE void mute(uint id, int minutes);
+    bool isMuted(const Notification &n) const;
+    int snoozeMinutes() const { return m_snoozeMinutes; }
+    void setSnoozeMinutes(int m)
+    {
+        m = qMax(1, m);
+        if (m != m_snoozeMinutes) {
+            m_snoozeMinutes = m;
+            Q_EMIT snoozeMinutesChanged();
+        }
+    }
     /* Clear every popup on screen and everything queued behind them.
        A notification with expire_timeout 0, or critical urgency, is required
        by the spec to stay until acted on — correct, but it means a misbehaving
@@ -204,6 +224,7 @@ public:
 
 Q_SIGNALS:
     void hiddenCountChanged();
+    void snoozeMinutesChanged();
     void liveCountChanged();
     void doNotDisturbChanged();
     void screenLockedChanged();
@@ -267,6 +288,8 @@ private:
        their own action. Kept here rather than inside Notification, which
        would have to hold a list of itself. */
     QHash<uint, QList<Notification>> m_members;
+    QHash<QString, QDateTime> m_mutedUntil;   // by group key
+    int m_snoozeMinutes = 10;
     /* More than this and the oldest close as before: a 300-message wake-up
        burst does not keep 300 senders waiting. */
     static constexpr int kMaxMembers = 50;

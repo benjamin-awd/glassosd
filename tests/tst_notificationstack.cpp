@@ -559,8 +559,10 @@ private Q_SLOTS:
        and the card could expire under it. */
     void restingOnAnActionKeepsTheCardPaused()
     {
+        /* An alert, so its actions are on the card rather than in Options. */
         Notification n = note(QStringLiteral("with an action"));
         n.actions = QStringList{QStringLiteral("reply"), QStringLiteral("Reply")};
+        n.urgency = Urgency::Critical;
         m_model->insert(n);
         QTRY_COMPARE(cards().size(), 1);
         waitSettled();
@@ -583,6 +585,69 @@ private Q_SLOTS:
         QVERIFY2(m_model->isHovered(n.id), "the pointer is on the card's button, but the card was told it left");
     }
 
+    /* A banner keeps its actions in Options, as macOS does; an alert (one
+       that stays until acted on) keeps the button bar. Options also mutes
+       the app for a while: the card goes and the app's next popup does not
+       appear. */
+    void aBannerKeepsItsActionsInOptions()
+    {
+        Notification banner = note(QStringLiteral("banner"));
+        banner.actions = QStringList{QStringLiteral("archive"), QStringLiteral("Archive")};
+        banner.timeoutMs = 60000;
+        m_model->insert(banner);
+        QTRY_COMPARE(cards().size(), 1);
+        waitSettled();
+        QQuickItem *card = cards().constFirst();
+        auto find = [&](const QString &text) {
+            QQuickItem *found = nullptr;
+            std::function<void(QQuickItem *)> walk = [&](QQuickItem *it) {
+                for (QQuickItem *c : it->childItems()) {
+                    if (!found && c->isVisible() && c->property("text").toString() == text) {
+                        found = c;
+                    }
+                    walk(c);
+                }
+            };
+            walk(card);
+            return found;
+        };
+        QVERIFY(!find(QStringLiteral("Archive")));        // no bar on a banner
+        QTest::mouseMove(m_win, drawn(card).center().toPoint());
+        QTRY_VERIFY(find(QStringLiteral("Options")));
+        QQuickItem *options = find(QStringLiteral("Options"));
+        QTRY_COMPARE(options->parentItem()->opacity(), 1.0);
+        const qreal closedHeight = card->height();
+        QPoint at = options->mapToScene(QPointF(options->width() / 2, options->height() / 2)).toPoint();
+        QTest::mouseMove(m_win, at);
+        QTest::mouseClick(m_win, Qt::LeftButton, Qt::NoModifier, at);
+        QTRY_VERIFY(find(QStringLiteral("Archive")));     // now in Options
+        QVERIFY(find(QStringLiteral("Mute for 1 hour")));
+        QVERIFY(find(QStringLiteral("Remind me in 10 minutes")));
+        QTRY_VERIFY(card->height() > closedHeight + 60);  // the card grew to hold it
+
+        QSignalSpy actions(m_model, &NotificationModel::actionInvoked);
+        QQuickItem *archive = find(QStringLiteral("Archive"));
+        at = archive->mapToScene(QPointF(20, archive->height() / 2)).toPoint();
+        QTest::mouseMove(m_win, at);
+        QTest::mouseClick(m_win, Qt::LeftButton, Qt::NoModifier, at);
+        QTRY_COMPARE(actions.size(), 1);
+        QCOMPARE(actions.first().at(1).toString(), QStringLiteral("archive"));
+    }
+
+    void muteHoldsBackTheAppsNextPopup()
+    {
+        Notification a = note(QStringLiteral("first"));
+        m_model->insert(a);
+        m_model->mute(a.id, 60);
+        QTRY_COMPARE(m_model->liveCount(), 0);
+        Notification b = note(QStringLiteral("second"));
+        b.appName = a.appName;
+        m_model->insert(b);
+        QCOMPARE(m_model->liveCount(), 0);
+        m_model->insert(note(QStringLiteral("someone else")));
+        QCOMPARE(m_model->liveCount(), 1);
+    }
+
     /* Hovering a card swaps its time for Options, which opens the card's
        menu; the cell keeps its width so the row does not reflow. */
     void optionsReplacesTheTimeOnHover()
@@ -598,7 +663,7 @@ private Q_SLOTS:
                 if (c->property("text").toString() == QLatin1String("Options")) {
                     options = c->parentItem();
                 }
-                if (c->metaObject()->indexOfProperty("atX") >= 0) {
+                if (c->metaObject()->indexOfProperty("snoozeMinutes") >= 0) {
                     menu = c;
                 }
                 walk(c);
