@@ -21,6 +21,8 @@
 #include <QQmlEngine>
 #include <QTimer>
 
+#include <functional>
+
 class HistoryModel : public QAbstractListModel
 {
     Q_OBJECT
@@ -161,6 +163,8 @@ public:
     /* The id an entry now goes by: an identical repeat merges into it under
        the new arrival's id, which the centre's cursor follows. */
     Q_INVOKABLE uint latestId(uint id) const;
+    void setClockForTesting(std::function<QDateTime()> clock) { m_clock = std::move(clock); }
+    bool ageTickActiveForTesting() const { return m_ageTick.isActive(); }
 
     Q_INVOKABLE void toggleGroup(const QString &key);
     Q_INVOKABLE void clearGroup(const QString &key);
@@ -213,6 +217,10 @@ private:
     int m_capacity = 200;
     QString storePath() const;
     mutable QTimer m_saveTimer;
+    /* While the centre is open: "5m ago" has to become "6m ago". */
+    QTimer m_ageTick;
+    std::function<QDateTime()> m_clock;
+    QDateTime now() const { return m_clock ? m_clock() : QDateTime::currentDateTimeUtc(); }
     bool m_panelOpen = false;
     bool m_sharing = false;
     Notification::LockPrivacy m_sharingFallback = Notification::LockPrivacy::HideContent;

@@ -14,6 +14,7 @@
 #include <QDBusArgument>
 #include <QDateTime>
 #include <QImage>
+#include <QLocale>
 #include <QMetaType>
 #include <QString>
 #include <QStringList>
@@ -197,6 +198,37 @@ struct Notification {
     QString groupKey() const
     {
         return desktopEntry.isEmpty() ? appName : desktopEntry;
+    }
+
+    /* How long ago, as macOS writes it on a banner and in Notification
+       Centre: "now", "5m ago", "2h ago", then "Yesterday", the weekday within
+       the week, and a date beyond. One formatter for the popup, its open
+       group and the centre, which each had their own and disagreed (the
+       centre wrote 23:22 under a card that said "now"). Days are local:
+       "Yesterday" is the user's yesterday. */
+    static QString relativeWhen(const QDateTime &received, const QDateTime &now)
+    {
+        const qint64 secs = received.secsTo(now);
+        if (secs < 60) {
+            return QStringLiteral("now");
+        }
+        if (secs < 3600) {
+            return QStringLiteral("%1m ago").arg(secs / 60);
+        }
+        const QDate day = received.toLocalTime().date();
+        const QDate today = now.toLocalTime().date();
+        if (day == today) {
+            return QStringLiteral("%1h ago").arg(secs / 3600);
+        }
+        const qint64 days = day.daysTo(today);
+        if (days == 1) {
+            return QStringLiteral("Yesterday");
+        }
+        if (days < 7) {
+            return QLocale().dayName(day.dayOfWeek(), QLocale::LongFormat);
+        }
+        return QLocale().toString(day, day.year() == today.year() ? QStringLiteral("d MMM")
+                                                                  : QStringLiteral("d MMM yyyy"));
     }
 };
 

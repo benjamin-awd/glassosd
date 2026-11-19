@@ -29,6 +29,12 @@ HistoryModel::HistoryModel(QObject *parent)
     connect(&m_saveTimer, &QTimer::timeout, this, [this] {
         save();
     });
+    m_ageTick.setInterval(30000);
+    connect(&m_ageTick, &QTimer::timeout, this, [this] {
+        if (!m_rows.isEmpty()) {
+            Q_EMIT dataChanged(index(0), index(int(m_rows.size()) - 1), {WhenRole});
+        }
+    });
 
     /* Capacity before load, and read here rather than waited for.
 
@@ -234,7 +240,7 @@ QVariant HistoryModel::data(const QModelIndex &index, int role) const
     case SummaryRole: return n.summary;
     case BodyRole:    return n.body;
     case UrgencyRole: return static_cast<int>(n.urgency);
-    case WhenRole:    return n.received.toLocalTime().toString(QStringLiteral("HH:mm"));
+    case WhenRole:    return Notification::relativeWhen(n.received, now());
     case RepeatCountRole: return n.repeatCount;
     case IconSourceRole: return iconSourceFor(n);
     default:
@@ -290,7 +296,6 @@ QVariantList HistoryModel::groupMembers(const QString &key, uint excludeId, int 
     if (key.isEmpty() || max <= 0) {
         return out;
     }
-    const QDateTime now = QDateTime::currentDateTimeUtc();
     for (const Notification &n : m_all) {   // newest first
         if (n.groupKey() != key || n.id == excludeId) {
             continue;
@@ -299,12 +304,7 @@ QVariantList HistoryModel::groupMembers(const QString &key, uint excludeId, int 
             const QVariant masked = maskedForSharing(n, role);
             return masked.isValid() ? masked : real;
         };
-        /* Relative, as the card's own header reads, not the centre's HH:mm:
-           the rows sit under a card that says "now". */
-        const qint64 secs = n.received.secsTo(now);
-        const QString when = secs < 60 ? QStringLiteral("now")
-                           : secs < 3600 ? QStringLiteral("%1m ago").arg(secs / 60)
-                                         : n.received.toLocalTime().toString(QStringLiteral("HH:mm"));
+        const QString when = Notification::relativeWhen(n.received, now());
         out.append(QVariantMap{
             {QStringLiteral("id"), n.id},
             {QStringLiteral("summary"), field(SummaryRole, n.summary)},
@@ -511,6 +511,15 @@ void HistoryModel::setPanelOpen(bool open)
         return;
     }
     m_panelOpen = open;
+    if (open) {
+        m_ageTick.start();
+        /* The ages moved on while it was shut. */
+        if (!m_rows.isEmpty()) {
+            Q_EMIT dataChanged(index(0), index(int(m_rows.size()) - 1), {WhenRole});
+        }
+    } else {
+        m_ageTick.stop();
+    }
     if (open) {
         m_unread = 0;
         /* changed(), not just panelOpenChanged(): the tray listens to the

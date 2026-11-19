@@ -238,17 +238,8 @@ QVariant NotificationModel::roleFor(const Notification &n, int role) const
                                       ? QStringLiteral("Reply…") : n.replyPlaceholder;
     case ReplySubmitTextRole:  return n.replySubmitText.isEmpty()
                                       ? QStringLiteral("Send") : n.replySubmitText;
-    case WhenRole: {
-        /* Apple-style relative time: "now" while fresh, then minutes. */
-        const qint64 secs = n.received.secsTo(now());
-        if (secs < 60) {
-            return QStringLiteral("now");
-        }
-        if (secs < 3600) {
-            return QStringLiteral("%1m ago").arg(secs / 60);
-        }
-        return n.received.toLocalTime().toString(QStringLiteral("HH:mm"));
-    }
+    case WhenRole:
+        return Notification::relativeWhen(n.received, now());
     case BadgeSourceRole:
         /* The sender's icon, small on the corner of a picture, the way macOS
            badges a contact's photo with the app it came through. Only when

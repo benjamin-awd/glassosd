@@ -228,6 +228,38 @@ private Q_SLOTS:
         QVERIFY(h.rowCount() < 3);
     }
 
+    /* Times read as macOS writes them, in the centre as on the banner:
+       the centre wrote 23:22 under a card that said "now". */
+    void timesAreRelative()
+    {
+        const QDateTime now = QDateTime(QDate(2026, 11, 19), QTime(15, 0)).toUTC();
+        auto at = [&](qint64 secsAgo) { return Notification::relativeWhen(now.addSecs(-secsAgo), now); };
+        QCOMPARE(at(10), QStringLiteral("now"));
+        QCOMPARE(at(5 * 60), QStringLiteral("5m ago"));
+        QCOMPARE(at(2 * 3600 + 60), QStringLiteral("2h ago"));
+        const QDateTime yesterdayEvening = QDateTime(QDate(2026, 11, 18), QTime(22, 0)).toUTC();
+        QCOMPARE(Notification::relativeWhen(yesterdayEvening, now), QStringLiteral("Yesterday"));
+        const QDate monday(2026, 11, 16);
+        QCOMPARE(Notification::relativeWhen(QDateTime(monday, QTime(9, 0)).toUTC(), now),
+                 QLocale().dayName(1, QLocale::LongFormat));
+        QCOMPARE(Notification::relativeWhen(QDateTime(QDate(2026, 10, 3), QTime(9, 0)).toUTC(), now),
+                 QLocale().toString(QDate(2026, 10, 3), QStringLiteral("d MMM")));
+
+        clearStore();
+        HistoryModel h;
+        QDateTime clock = QDateTime::currentDateTimeUtc();
+        h.setClockForTesting([&clock] { return clock; });
+        h.record(note(QStringLiteral("App"), QStringLiteral("hello")));
+        QCOMPARE(h.index(0).data(HistoryModel::WhenRole).toString(), QStringLiteral("now"));
+        clock = clock.addSecs(7 * 60);
+        QCOMPARE(h.index(0).data(HistoryModel::WhenRole).toString(), QStringLiteral("7m ago"));
+        QVERIFY(!h.ageTickActiveForTesting());
+        h.setPanelOpen(true);
+        QVERIFY(h.ageTickActiveForTesting());
+        h.setPanelOpen(false);
+        QVERIFY(!h.ageTickActiveForTesting());
+    }
+
     /* The rest of a popup's group, for opening it on the card: newest
        first, the card's own entry left out, capped, other apps ignored. */
     void groupMembersListsTheRestOfTheGroup()
