@@ -113,7 +113,14 @@ QVariant NotificationModel::data(const QModelIndex &index, int role) const
            arrived, and unlocking reveals it without the sender resending.
            The inline image goes with the text: it is a chat avatar, a photo
            preview, a QR code — content, not branding. The app icon stays. */
-        if (effectiveLockPrivacy(n) == Notification::LockPrivacy::HideContent) {
+        /* Hide too, though a Hide row should never be here: it is dropped
+           on arrival and when privacy comes on. This is the backstop for
+           any path that slips one through (an in-place update was one), so
+           the worst case is a card that says "hidden", not one that says
+           everything. */
+        const auto privacy = effectiveLockPrivacy(n);
+        if (privacy == Notification::LockPrivacy::HideContent
+            || privacy == Notification::LockPrivacy::Hide) {
             switch (role) {
             case SummaryRole: return tr("Notification hidden");
             case BodyRole:    return QString();
@@ -348,8 +355,14 @@ bool NotificationModel::replaceByTag(const Notification &n)
     }
     /* Matched on tag *and* app, per dunst — otherwise two apps using the same
        generic tag would clobber each other. Displayed is searched first. */
+    /* Not a closing row. It is only still here to finish its exit; written
+       over, it came back as a live card whose reveal had already run to 0,
+       so it held a slot and expired without ever being seen, and its old id
+       was announced closed a second time. PowerDevil re-sends its battery
+       card often enough to land inside the exit of the one just dismissed. */
     auto matches = [&n](const Notification &old) {
-        return !old.stackTag.isEmpty() && old.stackTag == n.stackTag && old.appName == n.appName;
+        return !old.closing && !old.stackTag.isEmpty() && old.stackTag == n.stackTag
+            && old.appName == n.appName;
     };
 
     for (int i = 0; i < m_displayed.size(); ++i) {
@@ -385,6 +398,9 @@ bool NotificationModel::replaceByTag(const Notification &n)
                 updated.senderIcon = old.senderIcon;
             }
             m_displayed[i] = updated;
+            if (m_hovered.remove(old.id)) {
+                m_hovered.insert(updated.id);   // same card, same pointer
+            }
             Q_EMIT dataChanged(index(i), index(i));
             /* A different id is going away, so this one does need announcing.
                Expired, not Dismissed — the user never acted on it. */
@@ -471,7 +487,12 @@ bool NotificationModel::coalesce(const Notification &n)
         const uint newest = m_newestFirst ? onScreen.takeFirst() : onScreen.takeLast();
         const int row = indexOfDisplayed(newest);
         merged.displayedAt = now();
-        m_hovered.remove(newest);
+        /* The card keeps its place and the pointer on it: the hold moves to
+           the id it now shows, or an open group expired under the reader the
+           moment another message of the burst arrived. */
+        if (m_hovered.remove(newest)) {
+            m_hovered.insert(merged.id);
+        }
         m_displayed[row] = merged;
         Q_EMIT dataChanged(index(row), index(row));
         Q_EMIT notificationClosed(newest, CloseReason::Expired);
@@ -495,11 +516,14 @@ uint NotificationModel::insert(Notification n)
         n.timeoutMs = defaultTimeoutFor(n.urgency);
     }
 
-    if (n.id != 0 && replaceById(n)) {
-        update();
-        return n.id;
-    }
-    if (replaceByTag(n)) {
+    /* An update in place has to meet the lock screen's Hide as an arrival
+       does: the new version may ask to be hidden (a rule matching its new
+       text, a portal update adding hide-on-lock-screen) when the old one
+       did not. Without this it was drawn in full while locked or shared. */
+    if ((n.id != 0 && replaceById(n)) || replaceByTag(n)) {
+        if (privacyActive()) {
+            dropHiddenForPrivacy();
+        }
         update();
         return n.id;
     }
@@ -724,7 +748,7 @@ void NotificationModel::dismiss(uint id)
 
 void NotificationModel::sendReply(uint id, const QString &text)
 {
-    if (text.isEmpty() || m_screenLocked) {
+    if (text.isEmpty() || m_screenLocked || !isLive(id)) {
         return;
     }
     Q_EMIT replied(id, text);
@@ -740,7 +764,7 @@ constexpr int kActivationTokenWaitMs = 200;
 
 void NotificationModel::activate(QQuickWindow *window, uint id, const QString &key)
 {
-    if (m_screenLocked) {
+    if (m_screenLocked || !isLive(id)) {
         return;   // see data(): acting needs the session unlocked
     }
     const int row = indexOfDisplayed(id);
@@ -766,6 +790,11 @@ void NotificationModel::activate(QQuickWindow *window, uint id, const QString &k
             return;
         }
         *fired = true;
+        /* It may have expired or been replaced while the token was on its
+           way, and its sender has then been told it closed. */
+        if (!isLive(id)) {
+            return;
+        }
         if (!token.isEmpty()) {
             Q_EMIT activationToken(id, token);
         }
@@ -779,7 +808,11 @@ void NotificationModel::activate(QQuickWindow *window, uint id, const QString &k
 
 void NotificationModel::invokeAction(uint id, const QString &key)
 {
-    if (m_screenLocked) {
+    /* Only while it is live. A card stays clickable through its exit, so a
+       double click, or a click during the fade, sent ActionInvoked a second
+       time, after NotificationClosed — the spec's order the other way round,
+       and some senders act twice. closeId() below makes the second one dead. */
+    if (m_screenLocked || !isLive(id)) {
         return;
     }
     Q_EMIT actionInvoked(id, key);
@@ -1038,6 +1071,11 @@ void NotificationModel::setLockPrivacyDefault(Notification::LockPrivacy policy)
         return;
     }
     m_lockDefault = policy;
+    /* A default switched to Hide while privacy is on turns every card that
+       expressed no preference into one that must not be on screen. */
+    if (privacyActive()) {
+        dropHiddenForPrivacy();
+    }
     if (privacyActive() && !m_displayed.isEmpty()) {
         Q_EMIT dataChanged(index(0), index(m_displayed.size() - 1),
                            {SummaryRole, BodyRole, IconSourceRole, BadgeSourceRole, ActionsRole, ReplyPlaceholderRole});

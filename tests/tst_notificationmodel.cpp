@@ -84,6 +84,91 @@ private:
     }
 
 private Q_SLOTS:
+    /* An update in place meets the lock screen's Hide as an arrival does:
+       a card already up whose new version asks to be hidden goes, rather
+       than being drawn in full. */
+    void anUpdateAskingToHideIsDroppedWhileLocked()
+    {
+        NotificationModel m;
+        plain(m);
+        m.insert(note(QStringLiteral("Chat"), QStringLiteral("hi"), QStringLiteral("body"), 7));
+        m.setScreenLocked(true);
+        QCOMPARE(m.liveCount(), 1);
+
+        Notification update = note(QStringLiteral("Chat"), QStringLiteral("secret"), QStringLiteral("body"), 7);
+        update.lockPrivacy = Notification::LockPrivacy::Hide;
+        m.insert(update);
+        QCOMPARE(m.liveCount(), 0);
+    }
+
+    /* Switching the default to Hide while locked drops the cards that
+       expressed no preference, rather than showing them unmasked. */
+    void aDefaultSwitchedToHideWhileLockedDrops()
+    {
+        NotificationModel m;
+        plain(m);
+        m.insert(note(QStringLiteral("Chat"), QStringLiteral("hi"), {}, 8));
+        m.setScreenLocked(true);
+        m.setLockPrivacyDefault(Notification::LockPrivacy::Hide);
+        QCOMPARE(m.liveCount(), 0);
+    }
+
+    /* A stack-tag repeat during the exit of the card it would replace is a
+       new card, not a revival of the leaving one. */
+    void aTagRepeatDuringAnExitIsANewCard()
+    {
+        NotificationModel m;
+        plain(m);
+        m.setExitMs(1000);
+        Notification a = note(QStringLiteral("PowerDevil"), QStringLiteral("6%"), {}, 20);
+        a.stackTag = QStringLiteral("battery");
+        m.insert(a);
+        m.dismiss(20);
+        QVERIFY(anyClosing(m));
+
+        QSignalSpy closed(&m, &NotificationModel::notificationClosed);
+        Notification b = note(QStringLiteral("PowerDevil"), QStringLiteral("5%"), {}, 21);
+        b.stackTag = QStringLiteral("battery");
+        m.insert(b);
+        QCOMPARE(m.liveCount(), 1);
+        QCOMPARE(m.rowCount(), 2);               // the leaving card, and the new one
+        for (const QList<QVariant> &c : std::as_const(closed)) {
+            QVERIFY(c.at(0).toUInt() != 20u);    // not announced closed a second time
+        }
+    }
+
+    /* A second click, or one during the exit, sends nothing. */
+    void anActionIsSentOnlyOnce()
+    {
+        NotificationModel m;
+        plain(m);
+        m.setExitMs(1000);
+        m.insert(note(QStringLiteral("Chat"), QStringLiteral("hi"), {}, 30));
+        QSignalSpy actions(&m, &NotificationModel::actionInvoked);
+        QSignalSpy replies(&m, &NotificationModel::replied);
+        m.invokeAction(30, QStringLiteral("default"));
+        m.invokeAction(30, QStringLiteral("default"));
+        m.sendReply(30, QStringLiteral("late"));
+        QCOMPARE(actions.count(), 1);
+        QCOMPARE(replies.count(), 0);
+    }
+
+    /* The pointer's hold follows the card when a stack tag swaps its id. */
+    void theHoverHoldFollowsATagReplacement()
+    {
+        NotificationModel m;
+        plain(m);
+        Notification a = note(QStringLiteral("App"), QStringLiteral("one"), {}, 40);
+        a.stackTag = QStringLiteral("t");
+        m.insert(a);
+        m.setHovered(40, true);
+        Notification b = note(QStringLiteral("App"), QStringLiteral("two"), {}, 41);
+        b.stackTag = QStringLiteral("t");
+        m.insert(b);
+        QVERIFY(m.isHovered(41));
+        QVERIFY(!m.isHovered(40));
+    }
+
     /* The expiry tick sleeps when there is nothing for it to do: nothing on
        screen that can expire and no burst inside the coalescing window. */
     void tickRunsOnlyWhileThereIsWork()

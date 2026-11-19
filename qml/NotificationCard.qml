@@ -597,6 +597,10 @@ Item {
        under the pointer. A HoverHandler is passive and stays hovered over
        the card's children. */
     readonly property bool pointerOn: cardPointer.hovered || closeButton.hovered || groupHovers > 0
+    /* The row can change id in place (coalescing, a stack tag). The hold
+       is sent by id, so say it again for the new one. */
+    readonly property var shownId: entry ? entry.notifId : 0
+    onShownIdChanged: if (pointerOn || cardMenu.open || groupShown) root.hoverChanged(true)
     onPointerOnChanged: {
         root.hoverChanged(pointerOn || cardMenu.open || groupShown)
         if (!pointerOn)
