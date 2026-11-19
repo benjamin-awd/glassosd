@@ -83,6 +83,10 @@ class Appearance : public QObject
        at and the centre is read. */
     Q_PROPERTY(int bodyLines READ bodyLines NOTIFY changed)
     Q_PROPERTY(int centreBodyLines READ centreBodyLines NOTIFY changed)
+    /* CentreStyle: "cards" (the default) draws the centre's entries as the
+       popup's cards and its folded groups as stacks; "list" is the centre as
+       it was before, kept as a fallback. */
+    Q_PROPERTY(bool centreCards READ centreCards NOTIFY changed)
     /* Point size, overriding the value derived from Scale. Set it when you
        want bigger text without bigger padding, which is what Scale does. */
     Q_PROPERTY(int fontSize READ fontSize NOTIFY changed)
@@ -130,6 +134,7 @@ public:
     int osdAnchor() const { return m_osdAnchor; }
     int bodyLines() const { return m_bodyLines; }
     int centreBodyLines() const { return m_centreBodyLines; }
+    bool centreCards() const { return m_centreCards; }
     int fontSize() const { return m_fontSize; }
     QStringList widgets() const { return m_widgets; }
     QStringList notifyHeader() const { return m_notifyHeader; }
@@ -165,6 +170,7 @@ private:
     int m_osdAnchor = 1;           // Top
     int m_bodyLines = 4;
     int m_centreBodyLines = 3;
+    bool m_centreCards = true;
     int m_fontSize = 0;   // 0 = derive from Scale
     QStringList m_widgets;
     QStringList m_notifyHeader;

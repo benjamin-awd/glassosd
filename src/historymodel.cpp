@@ -644,7 +644,7 @@ void HistoryModel::rebuild()
            not read as part of the group above it; every group is now its
            own card or stack, spaced from the next, and the card says x156
            itself. */
-        if (items.size() == 1) {
+        if (items.size() == 1 && (m_cards || occurrences == 1)) {
             Row row;
             row.groupKey = key;
             row.entry = items.first();
@@ -658,7 +658,7 @@ void HistoryModel::rebuild()
            in place (toggleGroup) into a header and every entry. It used to
            be a header over the newest row, which read as a list of app names
            with a sample under each, not as a pile of notifications. */
-        if (collapsed) {
+        if (collapsed && m_cards) {
             Row row;
             row.groupKey = key;
             row.entry = newest;
@@ -677,7 +677,16 @@ void HistoryModel::rebuild()
         /* The number of notifications, which is what the user counts — not
            the number of rows we chose to draw them in. */
         header.count = occurrences;
+        header.collapsed = collapsed;   // only ever true in the old list
         m_rows.append(header);
+        /* The old list: a folded group is its header over its newest entry. */
+        if (collapsed) {
+            Row row;
+            row.groupKey = key;
+            row.entry = newest;
+            m_rows.append(row);
+            continue;
+        }
         for (const Notification &n : items) {
             Row row;
             row.groupKey = key;
@@ -708,7 +717,7 @@ bool HistoryModel::isCollapsed(const QString &key, const QString &appName, int c
     }
     /* Drilled into one app, or searching: the point is to see the entries,
        and a stack would hide all but one of the matches. */
-    if (!m_filter.isEmpty() || !m_search.isEmpty()) {
+    if (m_cards && (!m_filter.isEmpty() || !m_search.isEmpty())) {
         return false;
     }
     if (m_alwaysCollapsed.contains(appName)) {

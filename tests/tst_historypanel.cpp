@@ -386,6 +386,51 @@ private Q_SLOTS:
         QCOMPARE(m_model->total(), 1);                 // the mail group went, chat stayed
     }
 
+    /* CentreStyle=list brings back the old centre: no cards, and the old
+       rows (a group's header with its chevron) instead. */
+    void theListStyleDrawsTheOldCentre()
+    {
+        auto count = [this](const char *cls) {
+            int n = 0;
+            std::function<void(QQuickItem *)> walk = [&](QQuickItem *it) {
+                for (QQuickItem *c : it->childItems()) {
+                    if (QByteArray(c->metaObject()->className()).startsWith(cls)) {
+                        ++n;
+                    }
+                    walk(c);
+                }
+            };
+            walk(m_win->contentItem());
+            return n;
+        };
+        QTRY_VERIFY(count("CentreCard") > 0);
+        QObject *appearance = m_engine->singletonInstance<QObject *>("org.glassosd.ui", "Appearance");
+        QVERIFY(appearance);
+        appearance->setProperty("centreCards", false);
+        m_model->setCentreCards(false);
+        QTRY_COMPARE(count("CentreCard"), 0);
+        QTRY_COMPARE(count("CentreGroupHeader"), 0);
+        auto chevrons = [this] {
+            int n = 0;
+            std::function<void(QQuickItem *)> walk = [&](QQuickItem *it) {
+                for (QQuickItem *c : it->childItems()) {
+                    if (c->isVisible() && c->property("text").toString() == QStringLiteral("\u25be")) {
+                        ++n;
+                    }
+                    walk(c);
+                }
+            };
+            walk(m_win->contentItem());
+            return n;
+        };
+        QTRY_COMPARE(chevrons(), 1);   // the old header's, over the Mail group
+        key(Qt::Key_Down);
+        key(Qt::Key_Down);
+        key(Qt::Key_Return);                                // still folds, the old way
+        QVERIFY(m_model->rowInfo(1).value(QStringLiteral("collapsed")).toBool());
+        appearance->setProperty("centreCards", true);
+    }
+
     void returnOnHeaderTogglesTheGroup()
     {
         key(Qt::Key_Down);

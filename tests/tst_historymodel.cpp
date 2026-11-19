@@ -293,6 +293,33 @@ private Q_SLOTS:
         QCOMPARE(h.rowCount(), 2);
     }
 
+    /* CentreStyle=list keeps the old centre's rows exactly: a folded group
+       is its header over its newest entry, a repeated single entry keeps a
+       header, and a search does not open folded groups. */
+    void theListStyleKeepsTheOldRows()
+    {
+        clearStore();
+        HistoryModel h;
+        h.setCentreCards(false);
+        h.setAutoCollapseOver(1);
+        for (int i = 0; i < 4; ++i) {
+            h.record(note(QStringLiteral("Mail"), QStringLiteral("m%1").arg(i)));
+        }
+        h.record(note(QStringLiteral("Beep"), QStringLiteral("again")));
+        h.record(note(QStringLiteral("Beep"), QStringLiteral("again")));
+        /* Beep: header, entry x2. Mail: header (folded), newest entry. */
+        QCOMPARE(h.rowCount(), 4);
+        QVERIFY(h.index(0).data(HistoryModel::IsHeaderRole).toBool());
+        QVERIFY(h.index(2).data(HistoryModel::IsHeaderRole).toBool());
+        QVERIFY(h.index(2).data(HistoryModel::CollapsedRole).toBool());
+        QCOMPARE(h.index(3).data(HistoryModel::StackDepthRole).toInt(), 0);
+        h.setSearch(QStringLiteral("m"));
+        QCOMPARE(h.rowCount(), 2);   // still folded: header, newest
+        h.setSearch(QString());
+        h.setCentreCards(true);
+        QCOMPARE(h.rowCount(), 2);   // the Beep card, the Mail stack
+    }
+
     /* The rest of a popup's group, for opening it on the card: newest
        first, the card's own entry left out, capped, other apps ignored. */
     void groupMembersListsTheRestOfTheGroup()

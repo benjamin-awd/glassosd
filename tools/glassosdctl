@@ -121,6 +121,7 @@ glassosdctl <command>
                          the same layout. 0 or 'auto' derives it from scale.
   lines [1-20]           Body lines a popup shows before eliding (default 4)
   centre-lines [1-20]    Body lines an entry in the centre shows (default 3)
+  centre-style [cards|list]  The centre as cards and stacks (default) or the old list
   lockscreen [show|hide-content|hide]
                          What a notification shows while the session is
                          locked. show is the default. hide-content keeps the
@@ -336,7 +337,7 @@ case "$cmd" in
       "LevelStyle|segmented" "Output|current" \
       "NotifyOutput|(follows Output)" "OsdOutput|(follows Output)" \
       "CentreOutput|(follows Output)" "Scale|1.0" "NotifyScale|1.0" \
-      "FontSize|auto (from scale)" "BodyLines|4" "CentreBodyLines|3" \
+      "FontSize|auto (from scale)" "BodyLines|4" "CentreBodyLines|3" "CentreStyle|cards" \
       "NotifyWidth|380" "Solidity|0.0" "Blur|auto" "NotifyLayer|overlay" \
       "NotifyPosition|top-right" "NotifyMarginX|0" "NotifyMarginY|0" \
       "CentrePosition|right" "OsdPosition|top" \
@@ -544,6 +545,12 @@ LockscreenPrivacy Portal Focus " in
   centre-lines|center-lines)
     if [ -z "${1:-}" ]; then echo "centre-lines: $(cfg_or Appearance CentreBodyLines 3)"
     else cfg_write Appearance CentreBodyLines "$1"; echo "centre-lines = $1"; fi ;;
+  centre-style|center-style)
+    case "${1:-}" in
+      "")         echo "centre-style: $(cfg_or Appearance CentreStyle cards)" ;;
+      cards|list) cfg_write Appearance CentreStyle "$1"; echo "centre-style = $1" ;;
+      *)          echo "centre-style: cards or list" >&2; exit 2 ;;
+    esac ;;
   lockscreen)
     case "${1:-}" in
       "")

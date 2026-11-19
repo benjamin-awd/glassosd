@@ -166,6 +166,17 @@ public:
        the new arrival's id, which the centre's cursor follows. */
     Q_INVOKABLE uint latestId(uint id) const;
     void setClockForTesting(std::function<QDateTime()> clock) { m_clock = std::move(clock); }
+    /* Cards and stacks (true), or the old list's rows: a folded group as a
+       header over its newest entry, a repeated single entry under a header,
+       groups folded the same while searching. See Appearance::centreCards. */
+    void setCentreCards(bool on)
+    {
+        if (m_cards != on) {
+            m_cards = on;
+            rebuild();
+        }
+    }
+    bool centreCards() const { return m_cards; }
     bool ageTickActiveForTesting() const { return m_ageTick.isActive(); }
 
     Q_INVOKABLE void toggleGroup(const QString &key);
@@ -241,6 +252,7 @@ private:
        the threshold, but an explicit expand has to survive rebuilds — and an
        explicit collapse has to survive a group shrinking below it. */
     QSet<QString> m_collapsed;   // explicitly collapsed by the user
+    bool m_cards = true;
     QHash<uint, uint> m_mergedInto;   // old id -> the id it merged into
     QSet<QString> m_expanded;    // explicitly expanded by the user
     /* App names carrying always_collapsed. Cached rather than read per group

@@ -119,6 +119,9 @@ void Appearance::reload()
        but 0 would hide the body entirely, which is a typo, not a choice. */
     m_bodyLines = qBound(1, g.readEntry("BodyLines", 4), 20);
     m_centreBodyLines = qBound(1, g.readEntry("CentreBodyLines", 3), 20);
+    /* Anything but "list" is cards, so a typo lands on the default. */
+    m_centreCards = g.readEntry("CentreStyle", QStringLiteral("cards")).trimmed().toLower()
+                    != QLatin1String("list");
     /* 0 means "derive from Scale"; anything else is an explicit point size. */
     const int fs = g.readEntry("FontSize", 0);
     m_fontSize = (fs == 0) ? 0 : qBound(6, fs, 32);

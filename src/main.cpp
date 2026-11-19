@@ -444,6 +444,11 @@ int main(int argc, char *argv[])
        signal. */
     auto *appearance = engine.singletonInstance<Appearance *>(
         QStringLiteral("org.glassosd.ui"), QStringLiteral("Appearance"));
+    /* CentreStyle: the model groups for the style the centre draws. */
+    history->setCentreCards(appearance->centreCards());
+    QObject::connect(appearance, &Appearance::changed, history, [history, appearance] {
+        history->setCentreCards(appearance->centreCards());
+    });
 
     auto *theme = engine.singletonInstance<Theme *>(QStringLiteral("org.glassosd.ui"),
                                                    QStringLiteral("Theme"));
