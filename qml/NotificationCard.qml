@@ -660,13 +660,22 @@ Item {
            and needs no region update. */
         /* Grouped, the fill is drawn by stackSurface beneath; this panel
            keeps only its edge and content. */
+        /* Only the press is animated. The colour itself used to be, so the
+           hand-over to and from stackSurface (opening or closing a group, a
+           lone card becoming a stack) faded too: 90 ms with no fill under
+           the top card of an opening group, and 90 ms of it drawn twice,
+           a dark band, the other way. */
+        property real pressAmount: cardHover.pressed ? 1 : 0
+        Behavior on pressAmount { NumberAnimation { duration: 90 } }
         surfaceColor: {
             if (root.stacked)
                 return "transparent"
             const base = Style.cardBackground
-            return cardHover.pressed ? Style.lift(base, 1.28) : base
+            const lit = Style.lift(base, 1.28)
+            const t = pressAmount
+            return Qt.rgba(base.r + (lit.r - base.r) * t, base.g + (lit.g - base.g) * t,
+                           base.b + (lit.b - base.b) * t, base.a + (lit.a - base.a) * t)
         }
-        Behavior on surfaceColor { ColorAnimation { duration: 90 } }
         /* Cards are glass too. At the default 0.975 alpha the backdrop effect
            is imperceptible, but a theme that lowers card.background needs the
            blur behind it or the card is merely see-through. */

@@ -657,6 +657,29 @@ private Q_SLOTS:
         QCOMPARE(holders(), 0);
     }
 
+    /* Opening a group hands the top card's fill from the stack beneath to
+       the card itself in the same frame. The card's colour animated up
+       from transparent over 90 ms instead, so for that long the top card
+       of an opening group had no fill at all. */
+    void anOpeningGroupsTopCardKeepsItsFill()
+    {
+        QQuickItem *card = groupOf(3, QStringLiteral("Fill"));
+        QVERIFY(card);
+        QQuickItem *panel = nullptr;
+        for (QQuickItem *c : card->childItems()) {
+            if (!panel && c->property("surfaceColor").isValid() && c->property("shadow").isValid()
+                && qFuzzyCompare(c->width(), card->width())) {
+                panel = c;
+            }
+        }
+        QVERIFY(panel);
+        const qreal full = singleton("Style")->property("cardBackground").value<QColor>().alphaF();
+        card->setProperty("groupOpen", true);
+        QTRY_VERIFY(card->property("groupProgress").toReal() > 0);
+        QVERIFY2(panel->property("color").value<QColor>().alphaF() > full * 0.95,
+                 "the top card's fill faded in as the group opened");
+    }
+
     /* An open group that falls to one card forgets it was open. The flag
        stayed set, and the app's next burst, coalescing into the same card,
        sprang open with nobody clicking. */
