@@ -116,6 +116,81 @@ private Q_SLOTS:
         QCOMPARE(m.hiddenCount(), 2);
     }
 
+    /* macOS order: in a top-anchored stack the newest card is at the top. */
+    void newestFirstPutsEachArrivalAtTheTop()
+    {
+        NotificationModel m;
+        plain(m);
+        m.setNewestFirst(true);
+        for (uint i = 1; i <= 3; ++i) {
+            m.insert(note(QStringLiteral("App%1").arg(i), QStringLiteral("n%1").arg(i), {}, i));
+        }
+        QCOMPARE(summaryAt(m, 0), QStringLiteral("n3"));
+        QCOMPARE(summaryAt(m, 1), QStringLiteral("n2"));
+        QCOMPARE(summaryAt(m, 2), QStringLiteral("n1"));
+    }
+
+    /* The limit gives a slot back by queueing the newest card, which is row 0
+       now, not the last row. Taking the last would queue the oldest instead
+       and reorder what the user is reading. */
+    void newestFirstQueuesTheNewestCardNotTheLastRow()
+    {
+        NotificationModel m;
+        plain(m);
+        m.setNewestFirst(true);
+        m.setLimit(4);
+        m.setIndicateHidden(true);
+        for (uint i = 1; i <= 5; ++i) {
+            m.insert(note(QStringLiteral("App%1").arg(i), QStringLiteral("n%1").arg(i), {}, i));
+        }
+        /* Same cards on screen as in append order (n1..n3), newest at the top. */
+        QCOMPARE(m.rowCount(), 3);
+        QCOMPARE(m.hiddenCount(), 2);
+        QCOMPARE(summaryAt(m, 0), QStringLiteral("n3"));
+        QCOMPARE(summaryAt(m, 2), QStringLiteral("n1"));
+
+        /* Freeing room brings the queue back in order, each above the last. */
+        m.dismissAll();
+        QCOMPARE(m.rowCount(), 0);
+    }
+
+    /* A burst still merges into its newest card where it stands; with the
+       newest at the top, that is the top Discord card. */
+    void newestFirstBurstMergesIntoTheTopCard()
+    {
+        NotificationModel m;
+        m.setTimeouts(0, 0, 0);
+        m.setCoalesce(3, 20000);
+        m.setNewestFirst(true);
+
+        m.insert(note(QStringLiteral("Discord"), QStringLiteral("msg 1"), {}, 1));
+        m.insert(note(QStringLiteral("Signal"), QStringLiteral("other"), {}, 2));
+        m.insert(note(QStringLiteral("Discord"), QStringLiteral("msg 2"), {}, 3));
+        m.insert(note(QStringLiteral("Discord"), QStringLiteral("msg 3"), {}, 4));
+
+        QCOMPARE(m.rowCount(), 2);
+        QCOMPARE(summaryAt(m, 0), QStringLiteral("msg 3"));
+        QCOMPARE(m.index(0).data(NotificationModel::GroupCountRole).toInt(), 3);
+        QCOMPARE(summaryAt(m, 1), QStringLiteral("other"));
+    }
+
+    /* Moving the stack between top and bottom keeps it newest-nearest-corner
+       for the cards already up, not just for the next arrival. */
+    void flippingNewestFirstReversesTheStack()
+    {
+        NotificationModel m;
+        plain(m);
+        for (uint i = 1; i <= 3; ++i) {
+            m.insert(note(QStringLiteral("App%1").arg(i), QStringLiteral("n%1").arg(i), {}, i));
+        }
+        QCOMPARE(summaryAt(m, 0), QStringLiteral("n1"));
+        m.setNewestFirst(true);
+        QCOMPARE(summaryAt(m, 0), QStringLiteral("n3"));
+        QCOMPARE(summaryAt(m, 2), QStringLiteral("n1"));
+        m.insert(note(QStringLiteral("App4"), QStringLiteral("n4"), {}, 4));
+        QCOMPARE(summaryAt(m, 0), QStringLiteral("n4"));
+    }
+
     void indicatorSlotCanBeTurnedOff()
     {
         NotificationModel m;

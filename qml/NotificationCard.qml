@@ -117,8 +117,10 @@ Item {
         Qt.callLater(root.revealNow)
     }
     function revealNow() {
-        if (reveal === 0.0 && !leaving)
+        if (reveal === 0.0 && !leaving) {
             reveal = 1.0
+            slot = 1.0
+        }
     }
     /* A binding rather than a one-off signal: the card can be created before
        it has a window, or after the window's first frame, and listening for
@@ -149,24 +151,35 @@ Item {
         } else {
             revealAnim.easing.type = Easing.InQuint
         }
+        slotAnim.duration = Style.animOut
+        slotAnim.easing.type = Easing.InOutCubic
         reveal = 0.0
         slot = 0.0
     }
 
-    /* The card's share of the column, 1 while it is up and 0 once it has
-       gone. Cards below a leaving one used to hold still until its row was
-       removed and then jump up a card's height in one frame; collapsing the
-       slot alongside the exit lets them glide up into the gap while it
-       leaves, which is how a macOS banner stack closes ranks. The stack turns
-       it into a `lift` on every card below; this card's own layout is never
-       touched. */
-    property real slot: 1.0
+    /* The card's share of the column: 0 before it arrives, 1 while it is up,
+       0 again once it has gone. Cards below a leaving one used to hold still
+       until its row was removed and then jump up a card's height in one
+       frame; collapsing the slot alongside the exit lets them glide up into
+       the gap while it leaves, which is how a macOS banner stack closes
+       ranks. The stack turns it into a `lift` on every card below; this
+       card's own layout is never touched.
+
+       Arrival is the same thing run forwards. The newest card is inserted at
+       the top of a top-anchored stack (NotificationModel.newestFirst), as
+       macOS does, and the layout makes room for it at once; starting at 0
+       holds the cards below where they were, and growing to 1 on the arrival
+       curve lets them glide down as this one slides in. revealNow() starts
+       it, together with the slide; the exit swaps in the exit timing. */
+    property real slot: 0.0
     /* How far the cards above this one have collapsed, set by the stack. */
     property real lift: 0.0
     Behavior on slot {
         NumberAnimation {
-            duration: Style.animOut
-            easing.type: Easing.InOutCubic
+            id: slotAnim
+            duration: Style.animIn
+            easing.type: Style.curveIn.length ? Easing.BezierSpline : Easing.OutQuint
+            easing.bezierCurve: Style.curveIn
         }
     }
 

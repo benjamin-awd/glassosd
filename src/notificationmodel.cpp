@@ -413,7 +413,7 @@ bool NotificationModel::coalesce(const Notification &n)
        the old card vanished mid-frame while the new one faded in thirty
        pixels away and the two overlapped (seen frame by frame). */
     if (!onScreen.isEmpty()) {
-        const uint newest = onScreen.takeLast();
+        const uint newest = m_newestFirst ? onScreen.takeFirst() : onScreen.takeLast();
         const int row = indexOfDisplayed(newest);
         merged.displayedAt = now();
         m_hovered.remove(newest);
@@ -751,6 +751,35 @@ int NotificationModel::effectiveLimit() const
     return m_limit;
 }
 
+int NotificationModel::newestLiveRow() const
+{
+    const int n = m_displayed.size();
+    for (int k = 0; k < n; ++k) {
+        const int row = m_newestFirst ? k : n - 1 - k;
+        if (!m_displayed.at(row).closing) {
+            return row;
+        }
+    }
+    return -1;
+}
+
+/* Reversing the rows keeps the stack consistent when the anchor flips (a
+   position change at runtime): the cards already up would otherwise sit in
+   the old order with new ones arriving at the other end. A reset, not moves:
+   it is rare and it is a jump the user just asked for. */
+void NotificationModel::setNewestFirst(bool on)
+{
+    if (m_newestFirst == on) {
+        return;
+    }
+    m_newestFirst = on;
+    if (m_displayed.size() > 1) {
+        beginResetModel();
+        std::reverse(m_displayed.begin(), m_displayed.end());
+        endResetModel();
+    }
+}
+
 void NotificationModel::update()
 {
     const int limit = effectiveLimit();
@@ -764,8 +793,9 @@ void NotificationModel::update()
             continue;   // never shown again; see below
         }
         n.displayedAt = now();
-        beginInsertRows({}, m_displayed.size(), m_displayed.size());
-        m_displayed.append(n);
+        const int at = m_newestFirst ? 0 : m_displayed.size();
+        beginInsertRows({}, at, at);
+        m_displayed.insert(at, n);
         endInsertRows();
     }
 
@@ -779,10 +809,7 @@ void NotificationModel::update()
        expiring and invisible to Dismiss All, which all treat closing rows as
        already gone. */
     while (liveCount() > limit) {
-        int row = m_displayed.size() - 1;
-        while (row >= 0 && m_displayed.at(row).closing) {
-            --row;
-        }
+        const int row = newestLiveRow();
         if (row < 0) {
             break;
         }

@@ -139,6 +139,14 @@ Window {
         value: Style.animOut
     }
 
+    /* Newest card nearest the anchored corner, as macOS stacks banners: at
+       the top of a top-anchored stack, at the bottom of a bottom-anchored one. */
+    Binding {
+        target: NotificationModel
+        property: "newestFirst"
+        value: !win.bottomAnchored
+    }
+
     /* Only a card offering inline reply needs the keyboard. Anything else
        leaves focus where the user put it. */
     function refreshKeyboardFocus() {
@@ -192,6 +200,23 @@ Window {
         }
         onYChanged: refreshChildRegions()
         onXChanged: refreshChildRegions()
+
+        /* The whole stack's pending movement: how far every card's slot is
+           from settled, in pixels. Each card applies the part above it as its
+           `lift`; the Clear all pill sits below them all, so it takes all of
+           it. Without this the pill snapped to its final place when a card
+           arrived, and the cards gliding down overtook it. */
+        readonly property real pendingLift: {
+            win.collapseRev
+            list.count
+            let s = 0
+            for (let j = 0; j < list.count; ++j) {
+                const c = list.itemAt(j)
+                if (c && c.slot < 1.0)
+                    s += (1.0 - c.slot) * (c.height + column.spacing)
+            }
+            return s
+        }
 
         Repeater {
             id: list
@@ -252,6 +277,7 @@ Window {
            every one is already in the notification centre's history. */
         GlassPanel {
             id: storm
+            transform: Translate { y: -column.pendingLift }
             readonly property bool waiting: NotificationModel.hiddenCount > 0
             /* Live cards, not rows: a card fading out still has a row. Counted
                by rows, the pill outlived the cards it had just cleared by a

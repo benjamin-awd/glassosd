@@ -40,6 +40,10 @@ class NotificationModel : public QAbstractListModel
        lock screen will not draw. */
     Q_PROPERTY(bool screenLocked READ screenLocked NOTIFY screenLockedChanged)
     Q_PROPERTY(int exitMs READ exitMs WRITE setExitMs)
+    /* Where a newly shown card goes: row 0 (true) or the end (false). The
+       stack sets it so the newest card is always nearest the anchored corner,
+       as macOS stacks its banners: top-anchored stacks put it first. */
+    Q_PROPERTY(bool newestFirst READ newestFirst WRITE setNewestFirst)
 
 public:
     enum Roles {
@@ -133,6 +137,9 @@ public:
        through now(), so a test can replace the clock and step it by hand,
        then run the expiry check itself instead of sleeping through the 250ms
        tick. The daemon never calls these; the default clock is the wall clock. */
+    bool newestFirst() const { return m_newestFirst; }
+    void setNewestFirst(bool on);
+
     void setClockForTesting(std::function<QDateTime()> clock) { m_clock = std::move(clock); }
     void expireForTesting() { expireTick(); }
 
@@ -209,6 +216,8 @@ private:
     void expireTick();
     void finishClose(uint id);
     QDateTime now() const { return m_clock(); }
+    /* Row of the newest card that is not closing, or -1. */
+    int newestLiveRow() const;
     int indexOfDisplayed(uint id) const;
 
     /* Precedence, in dunst's order: an explicit replaces_id wins, then a stack
@@ -252,6 +261,7 @@ private:
     int m_idleTimeoutId = -1;
     bool m_userIdle = false;
     int m_exitMs = 0;
+    bool m_newestFirst = false;
     int m_lastLiveCount = 0;   // set from QML; 0 keeps the old instant removal
     int m_coalesceThreshold = 3;
     int m_coalesceWindowMs = 20000;
