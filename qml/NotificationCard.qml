@@ -87,7 +87,9 @@ Item {
        nearest the edge, which softens the clip against the screen edge. A
        card that stays where it is has nothing but the fade, so it keeps the
        full ramp. */
-    opacity: (Style.slideTravel > 0 ? Math.min(1.0, reveal * 4.0) : reveal)
+    /* A swiped card is carried off the edge by the swipe itself, so it
+       stays opaque all the way out like any object thrown off a surface. */
+    opacity: (Style.slideTravel > 0 ? (swipingOut ? 1.0 : Math.min(1.0, reveal * 4.0)) : reveal)
              * (Style.slideTravel > 0 ? 1.0 : (1.0 - 0.8 * swipeProgress))
 
     /* Quint rather than Cubic: Material's "emphasized" curves are far steeper
@@ -189,7 +191,10 @@ Item {
     transform: Translate {
         /* Arrives from the right, as the macOS banner does, and rises only
            when it cannot slide. The two together read as a diagonal. */
-        x: root.swipeX + (1.0 - root.reveal) * Style.slideTravel
+        /* Not once swiped: the swipe carries the card past the edge on its
+           own, and adding the exit slide on top doubled the distance it had
+           to cover in the same time. */
+        x: root.swipeX + (root.swipingOut ? 0 : (1.0 - root.reveal) * Style.slideTravel)
         y: (Style.slideTravel > 0 ? 0 : (1.0 - root.reveal) * Style.animRise) - root.lift
     }
 
@@ -360,10 +365,11 @@ Item {
     Behavior on swipeRaw {
         enabled: !swipe.active
         NumberAnimation {
-            duration: root.swipingOut ? Style.animOut : Style.swipeSpring
-            /* Out, not In: the finger has already given the card its speed,
-               and an accelerating curve started it from rest again. */
-            easing.type: Easing.OutCubic
+            duration: root.swipingOut ? root.throwMs : Style.swipeSpring
+            /* The spring back is a plain OutCubic. The throw continues at
+               the speed the finger let go with: see endSwipe(). */
+            easing.type: root.swipingOut ? Easing.BezierSpline : Easing.OutCubic
+            easing.bezierCurve: root.throwCurve
         }
     }
 
@@ -394,13 +400,41 @@ Item {
         /* Dismiss now and let the exit fade run alongside the last of the
            travel: the model keeps the row for Style.animOut either way, so
            waiting for the slide to finish first would only double the wait. */
-        swipingOut = true
         /* Far enough to clear the screen edge, not merely the card's own
            width: the surface now reaches the edge, so the card is clipped by
            it rather than stopping short. */
-        swipeRaw = root.width + Style.shadowPad * 2
+        const target = Math.max(swipeRaw, root.width + Style.shadowPad * 2)
+        /* Thrown at the speed it was let go. It used to fly the rest of the
+           way on a fixed 250 ms OutCubic, plus the exit slide on top, whose
+           first frame moves at 3 x distance / duration: released at the
+           commit point of a 398px card that was ~8900 px/s against a real
+           flick of 0.5-1.5k, and the card was past the edge ~40 ms later,
+           a snap rather than a throw.
+
+           The flight is a bezier whose starting slope matches the release
+           velocity: with the first control point at x = 1/3 the slope is
+           3 * y1, and in normalised units the velocity is v * T / distance.
+           A fast flick shortens the flight so OutCubic's start still
+           matches it; a slow release (or a trackpad gesture with no
+           velocity) eases in from rest. It never takes longer than the
+           model keeps the row (Style.animOut), so the card is off the
+           screen before its delegate goes. */
+        const dist = Math.max(1, target - swipeRaw)
+        const v = Math.max(0, releaseVelocity) / 1000   // px per ms
+        let ms = Style.animOut
+        if (v > 0)
+            ms = Math.max(60, Math.min(Style.animOut, 3 * dist / v))
+        const y1 = Math.min(1.0, v * ms / dist / 3)
+        throwCurve = [0.333, y1, 0.667, 1.0, 1.0, 1.0]
+        throwMs = ms
+        swipingOut = true
+        swipeRaw = target
         root.dismissed()
     }
+    /* The committed swipe's flight, set by endSwipe(). */
+    property int throwMs: Style.animOut
+    property var throwCurve: [0.333, 0.0, 0.667, 1.0, 1.0, 1.0]
+
     signal dismissed()
     signal settingsRequested()
     signal snoozeRequested()

@@ -354,6 +354,54 @@ private Q_SLOTS:
         QVERIFY2(!everShown, "Clear all flashed up for a momentary third card");
     }
 
+    /* A committed swipe carries on at the speed it was let go. It used to
+       fly a fixed 250 ms OutCubic plus the exit slide, so its first frame
+       moved at ~8900 px/s whatever the finger did. */
+    void aThrownCardKeepsTheReleaseVelocity_data()
+    {
+        QTest::addColumn<qreal>("velocity");
+        QTest::newRow("slow release") << qreal(400);
+        QTest::newRow("ordinary flick") << qreal(1200);
+        QTest::newRow("hard flick") << qreal(6000);
+    }
+    void aThrownCardKeepsTheReleaseVelocity()
+    {
+        QFETCH(qreal, velocity);
+        setTheme({{QStringLiteral("motion.in"), 120}, {QStringLiteral("motion.out"), 250},
+                  {QStringLiteral("motion.slideTravel"), 362}});
+        m_model->setExitMs(250);
+        m_model->insert(note(QStringLiteral("swiped")));
+        QTRY_COMPARE(cards().size(), 1);
+        waitSettled();
+        QQuickItem *card = cards().constFirst();
+        card->setProperty("swipeRaw", 150.0);
+        QTRY_COMPARE_WITH_TIMEOUT(card->property("swipeX").toReal(), 150.0, 2000);
+        card->setProperty("releaseVelocity", velocity);
+        QMetaObject::invokeMethod(card, "endSwipe");
+
+        /* The flight's starting speed, from its duration and curve. */
+        const qreal ms = card->property("throwMs").toReal();
+        const QVariantList curve = card->property("throwCurve").toList();
+        const qreal dist = card->width() + 2 * singleton("Style")->property("shadowPad").toReal() - 150.0;
+        QVERIFY(ms > 0 && ms <= 250);
+        const qreal start = 3 * curve.at(1).toReal() * dist / ms * 1000;
+        QVERIFY2(start > velocity * 0.7 && start < velocity * 1.4,
+                 qPrintable(QStringLiteral("released at %1 px/s, thrown at %2 px/s").arg(velocity).arg(start)));
+
+        /* And it is off the screen before its row is removed. */
+        QPointer<QQuickItem> watched(card);
+        qreal lastLeft = 0;
+        auto conn = connect(m_win, &QQuickWindow::beforeSynchronizing, this, [&] {
+            if (watched && watched->window()) {
+                lastLeft = drawn(watched).left();
+            }
+        }, Qt::DirectConnection);
+        QTRY_COMPARE_WITH_TIMEOUT(cards().size(), 0, 2000);
+        disconnect(conn);
+        QVERIFY2(lastLeft >= m_win->width(),
+                 qPrintable(QStringLiteral("last drawn at x=%1 in a %2px window").arg(lastLeft).arg(m_win->width())));
+    }
+
     /* e099271: a settings change re-sends the position. With a sliding theme
        the right margin is folded into the layout, and passing it to the
        layer shell as well pushed the surface inward on every change. */
