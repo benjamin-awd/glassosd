@@ -475,6 +475,23 @@ private Q_SLOTS:
         QCOMPARE(f.model.liveCount(), 1);
     }
 
+    /* A portal notification's signals belong to the portal's interface:
+       nothing about it goes out on the freedesktop one, reply text least. */
+    void portalSignalsStayOffTheFreedesktopInterface()
+    {
+        Fixture f;
+        QSignalSpy closed(&f.server, &NotificationServer::closed);
+        QSignalSpy actions(&f.server, &NotificationServer::actionInvoked);
+        QSignalSpy replies(&f.server, &NotificationServer::replied);
+        const uint portal = 0x80000005u;
+        Q_EMIT f.model.notificationClosed(portal, 2);
+        Q_EMIT f.model.actionInvoked(portal, QStringLiteral("default"));
+        Q_EMIT f.model.replied(portal, QStringLiteral("private"));
+        QCOMPARE(closed.size() + actions.size() + replies.size(), 0);
+        Q_EMIT f.model.notificationClosed(5, 2);
+        QCOMPARE(closed.size(), 1);
+    }
+
     void anEmptyNotificationIsClosedNotForgotten()
     {
         Fixture f;

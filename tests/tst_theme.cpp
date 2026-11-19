@@ -150,11 +150,20 @@ private Q_SLOTS:
         QCOMPARE(glass.readEntry("MaterialLumaMin", -1), 60);
         QCOMPARE(glass.readEntry("MaterialLumaMax", -1), 100);
 
+        /* Ours, so a theme without the key hands it back to the default. */
         write(QStringLiteral("plain"), R"j({"x": 1})j");
         select(QStringLiteral("plain"));
         { Theme t; }
         kwinrc->reparseConfiguration();
-        QCOMPARE(glass.readEntry("MaterialLumaMin", -1), 60);
+        QCOMPARE(glass.readEntry("MaterialLumaMin", -1), -1);
+        QCOMPARE(glass.readEntry("MaterialLumaMax", -1), -1);
+
+        /* Set by hand (no marker): left exactly as it is. */
+        glass.writeEntry("MaterialLumaMin", 25);
+        kwinrc->sync();
+        { Theme t; }
+        kwinrc->reparseConfiguration();
+        QCOMPARE(glass.readEntry("MaterialLumaMin", -1), 25);
     }
 
     void cleanupTestCase()

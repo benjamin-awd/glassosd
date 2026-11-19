@@ -171,6 +171,19 @@ private Q_SLOTS:
 
     /* The expiry tick sleeps when there is nothing for it to do: nothing on
        screen that can expire and no burst inside the coalescing window. */
+    /* A card that stays up is told the time has moved on. */
+    void theAgeTickRunsWhileCardsAreShown()
+    {
+        NotificationModel m;
+        plain(m);
+        QVERIFY(!m.ageTickActiveForTesting());
+        m.insert(note(QStringLiteral("App"), QStringLiteral("a"), {}, 90));
+        QVERIFY(m.ageTickActiveForTesting());
+        m.dismiss(90);
+        QTRY_COMPARE(m.rowCount(), 0);
+        QVERIFY(!m.ageTickActiveForTesting());
+    }
+
     void tickRunsOnlyWhileThereIsWork()
     {
         FakeClock clock;

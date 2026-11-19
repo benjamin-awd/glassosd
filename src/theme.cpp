@@ -238,19 +238,40 @@ QJsonObject Theme::withBase(const QJsonObject &theme, const QString &path, int d
    alone, so nothing changes for anyone not using glassblur. */
 void Theme::applyMaterial()
 {
-    const QJsonArray range = lookup(QStringLiteral("blur.materialLuma")).toArray();
-    if (range.size() != 2 || !range.at(0).isDouble() || !range.at(1).isDouble()) {
-        return;
-    }
-    const int lo = qBound(0, range.at(0).toInt(), 100);
-    const int hi = qBound(lo, range.at(1).toInt(), 100);
     auto kwinrc = KSharedConfig::openConfig(QStringLiteral("kwinrc"));
+    /* Re-read: kwinrc is edited by hand and by System Settings too, and a
+       cached copy could say "already set" about values that are not. */
+    kwinrc->reparseConfiguration();
     KConfigGroup g(kwinrc, QStringLiteral("Effect-glassblur"));
-    if (g.readEntry("MaterialLumaMin", -1) == lo && g.readEntry("MaterialLumaMax", -1) == hi) {
-        return;
+    /* The range is only ours to manage once we have written it: the marker
+       says so, and a theme without the key then hands the range back to
+       glassblur's defaults instead of keeping the previous theme's (a dark
+       theme left with a light one's 60-100). A range Ben set by hand, with no
+       marker, is never touched. */
+    const bool ours = g.readEntry("MaterialSetBy", QString()) == QLatin1String("glassosd");
+
+    const QJsonArray range = lookup(QStringLiteral("blur.materialLuma")).toArray();
+    const bool themed = range.size() == 2 && range.at(0).isDouble() && range.at(1).isDouble();
+    QString what;
+    if (themed) {
+        const int lo = qBound(0, range.at(0).toInt(), 100);
+        const int hi = qBound(lo, range.at(1).toInt(), 100);
+        if (ours && g.readEntry("MaterialLumaMin", -1) == lo && g.readEntry("MaterialLumaMax", -1) == hi) {
+            return;
+        }
+        g.writeEntry("MaterialLumaMin", lo);
+        g.writeEntry("MaterialLumaMax", hi);
+        g.writeEntry("MaterialSetBy", QStringLiteral("glassosd"));
+        what = QStringLiteral("set to %1-%2%").arg(lo).arg(hi);
+    } else {
+        if (!ours) {
+            return;
+        }
+        g.deleteEntry("MaterialLumaMin");
+        g.deleteEntry("MaterialLumaMax");
+        g.deleteEntry("MaterialSetBy");
+        what = QStringLiteral("back to glassblur's default");
     }
-    g.writeEntry("MaterialLumaMin", lo);
-    g.writeEntry("MaterialLumaMax", hi);
     kwinrc->sync();
     /* Not from a test: the suite's kwinrc is a scratch file, and the real
        compositor has no business re-reading its own because of it. */
@@ -262,7 +283,7 @@ void Theme::applyMaterial()
                                                        QStringLiteral("reconfigureEffect"));
     call.setArguments({QStringLiteral("glassblur")});
     QDBusConnection::sessionBus().call(call, QDBus::NoBlock);
-    qInfo("glassosd: glassblur material set to %d-%d%% for theme '%s'", lo, hi, qUtf8Printable(m_name));
+    qInfo("glassosd: glassblur material %s for theme '%s'", qUtf8Printable(what), qUtf8Printable(m_name));
 }
 
 QJsonValue Theme::lookup(const QString &key, int depth) const

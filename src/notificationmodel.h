@@ -145,6 +145,7 @@ public:
     void setClockForTesting(std::function<QDateTime()> clock) { m_clock = std::move(clock); }
     void expireForTesting() { expireTick(); }
     bool tickActiveForTesting() const { return m_tick.isActive(); }
+    bool ageTickActiveForTesting() const { return m_ageTick.isActive(); }
 
     /* Put this one away and let it come back later. The notification itself
        is handed out rather than kept: persistence belongs to SnoozeStore, and
@@ -187,6 +188,9 @@ public:
     /* True while the notification is still displayed or queued, which is the
        only window in which its sender is still listening for an action. */
     bool isLive(uint id) const;
+    /* Live and offering a "default" action, i.e. a click on it means
+       something to its sender. */
+    bool hasDefaultAction(uint id) const;
     Q_INVOKABLE void sendReply(uint id, const QString &text);
 
     /* Activating a notification has to hand the sender an XDG activation
@@ -282,6 +286,10 @@ private:
        "6% remaining" are different content and each gets its own popup. */
     QHash<QString, QDateTime> m_lastShownByContent;
     QTimer m_tick;
+    /* Re-announces WhenRole so "now" becomes "1m ago" on a card that stays
+       up (critical, timeout 0, or held by the pointer). Runs only while
+       something is on screen. */
+    QTimer m_ageTick;
     std::function<QDateTime()> m_clock = [] { return QDateTime::currentDateTimeUtc(); };
     QSet<uint> m_hovered;
     bool m_hoverPause = true;

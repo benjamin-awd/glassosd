@@ -457,6 +457,37 @@ private Q_SLOTS:
     /* Round trip: what save() writes, load() has to read back. The counts on
        deduplicated entries are the part that is easy to drop, because they
        live nowhere but that field. */
+    /* An entry's lock-screen wish survives a restart, so the centre still
+       masks it while the screen is shared. */
+    void lockPrivacySurvivesAReload()
+    {
+        clearStore();
+        {
+            HistoryModel h;
+            Notification n = note(QStringLiteral("Chat"), QStringLiteral("secret"), QStringLiteral("b"), 701);
+            n.lockPrivacy = Notification::LockPrivacy::Hide;
+            h.record(n);
+            h.record(note(QStringLiteral("Chat"), QStringLiteral("newest"), {}, 702));
+            h.save();
+        }
+        HistoryModel reloaded;
+        reloaded.setScreenSharing(true, Notification::LockPrivacy::Show);
+        const QString key = reloaded.index(0).data(HistoryModel::GroupKeyRole).toString();
+        const QVariantMap row = reloaded.groupMembers(key, 702, 5).value(0).toMap();
+        QCOMPARE(row.value(QStringLiteral("summary")).toString(), QStringLiteral("Notification hidden"));
+    }
+
+    /* A replaces_id update is the same message changing, not a new one. */
+    void anUpdateInPlaceIsNotUnread()
+    {
+        clearStore();
+        HistoryModel h;
+        h.record(note(QStringLiteral("Copy"), QStringLiteral("10%"), {}, 801));
+        h.record(note(QStringLiteral("Copy"), QStringLiteral("50%"), {}, 801));
+        h.record(note(QStringLiteral("Copy"), QStringLiteral("100%"), {}, 801));
+        QCOMPARE(h.unread(), 1);
+    }
+
     void savedHistoryReloads()
     {
         clearStore();

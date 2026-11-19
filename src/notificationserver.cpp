@@ -144,10 +144,30 @@ NotificationServer::NotificationServer(NotificationModel *model, HistoryModel *h
 {
     qDBusRegisterMetaType<ImageData>();
 
-    connect(m_model, &NotificationModel::notificationClosed, this, &NotificationServer::closed);
-    connect(m_model, &NotificationModel::actionInvoked, this, &NotificationServer::actionInvoked);
-    connect(m_model, &NotificationModel::replied, this, &NotificationServer::replied);
-    connect(m_model, &NotificationModel::activationToken, this, &NotificationServer::activationToken);
+    /* Only this interface's own ids. Portal notifications (top bit set) are
+       answered by PortalServer on the portal's interface; broadcast here too,
+       their actions and reply text went to every freedesktop listener on the
+       bus, which is exactly what the portal is meant to keep them out of. */
+    connect(m_model, &NotificationModel::notificationClosed, this, [this](uint id, uint reason) {
+        if (!NotificationId::isPortal(id)) {
+            Q_EMIT closed(id, reason);
+        }
+    });
+    connect(m_model, &NotificationModel::actionInvoked, this, [this](uint id, const QString &key) {
+        if (!NotificationId::isPortal(id)) {
+            Q_EMIT actionInvoked(id, key);
+        }
+    });
+    connect(m_model, &NotificationModel::replied, this, [this](uint id, const QString &text) {
+        if (!NotificationId::isPortal(id)) {
+            Q_EMIT replied(id, text);
+        }
+    });
+    connect(m_model, &NotificationModel::activationToken, this, [this](uint id, const QString &token) {
+        if (!NotificationId::isPortal(id)) {
+            Q_EMIT activationToken(id, token);
+        }
+    });
 }
 
 bool NotificationServer::start()

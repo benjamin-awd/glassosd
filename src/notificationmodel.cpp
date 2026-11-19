@@ -44,6 +44,12 @@ NotificationModel::NotificationModel(QObject *parent)
 {
     m_tick.setInterval(kTickMs);
     connect(&m_tick, &QTimer::timeout, this, &NotificationModel::expireTick);
+    m_ageTick.setInterval(30000);
+    connect(&m_ageTick, &QTimer::timeout, this, [this] {
+        if (!m_displayed.isEmpty()) {
+            Q_EMIT dataChanged(index(0), index(m_displayed.size() - 1), {WhenRole});
+        }
+    });
 
     /* Every way the live count can move goes through one of these: rows
        arriving or leaving, or a row being marked closing. */
@@ -298,6 +304,28 @@ bool NotificationModel::isLive(uint id) const
     for (const Notification &n : m_waiting) {
         if (n.id == id) {
             return true;
+        }
+    }
+    return false;
+}
+
+bool NotificationModel::hasDefaultAction(uint id) const
+{
+    auto offers = [](const Notification &n) {
+        for (int i = 0; i + 1 < n.actions.size(); i += 2) {
+            if (n.actions.at(i) == QLatin1String("default")) {
+                return true;
+            }
+        }
+        return false;
+    };
+    const int row = indexOfDisplayed(id);
+    if (row >= 0) {
+        return offers(m_displayed.at(row));
+    }
+    for (const Notification &n : m_waiting) {
+        if (n.id == id) {
+            return offers(n);
         }
     }
     return false;
@@ -932,6 +960,12 @@ void NotificationModel::syncTick()
         m_tick.start();
     } else if (!work && m_tick.isActive()) {
         m_tick.stop();
+    }
+    const bool shown = !m_displayed.isEmpty();
+    if (shown && !m_ageTick.isActive()) {
+        m_ageTick.start();
+    } else if (!shown && m_ageTick.isActive()) {
+        m_ageTick.stop();
     }
 }
 

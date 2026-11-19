@@ -87,6 +87,15 @@ void HistoryModel::load()
         n.urgency = static_cast<Urgency>(o.value(QStringLiteral("urgency")).toInt(1));
         n.received = QDateTime::fromString(o.value(QStringLiteral("at")).toString(), Qt::ISODate);
         n.repeatCount = o.value(QStringLiteral("repeats")).toInt(1);
+        /* The sender's or rule's lock-screen wish, so the centre masks it
+           while sharing after a restart as it did before. Unknown values
+           (a newer build's) read as Unset, which falls back to the default. */
+        const int privacy = o.value(QStringLiteral("privacy")).toInt(0);
+        if (privacy > int(Notification::LockPrivacy::Unset)
+            && privacy <= int(Notification::LockPrivacy::Hide)) {
+            n.lockPrivacy = static_cast<Notification::LockPrivacy>(privacy);
+        }
+        n.lockKeep = o.value(QStringLiteral("lockKeep")).toString();
         /* Tracked separately: feeding a portal id back into the
            freedesktop sequence would push it over the top bit and make every
            subsequent Notify() collide with the portal's range. */
@@ -155,6 +164,12 @@ void HistoryModel::save() const
         o[QStringLiteral("at")] = n.received.toString(Qt::ISODate);
         if (n.repeatCount > 1) {
             o[QStringLiteral("repeats")] = n.repeatCount;
+        }
+        if (n.lockPrivacy != Notification::LockPrivacy::Unset) {
+            o[QStringLiteral("privacy")] = int(n.lockPrivacy);
+        }
+        if (!n.lockKeep.isEmpty()) {
+            o[QStringLiteral("lockKeep")] = n.lockKeep;
         }
         /* Inline image-data is deliberately not persisted: it is raw pixels
            and would bloat the file badly. Such entries fall back to the app
@@ -346,10 +361,6 @@ void HistoryModel::record(const Notification &n)
         return;
     }
 
-    /* Not counted while the centre is open — you are looking at it. */
-    if (!m_panelOpen) {
-        ++m_unread;
-    }
 
     /* A replaces_id notification is the *same* message updating itself — a
        file-copy progress notification would otherwise leave a hundred entries
@@ -367,6 +378,14 @@ void HistoryModel::record(const Notification &n)
             rebuild();
             return;
         }
+    }
+
+    /* Counted only for something new: a replaces_id update above is the
+       same message changing (a copy's progress), and counting each step put
+       a hundred on the badge for one file. Not counted while the centre is
+       open, either — you are looking at it. */
+    if (!m_panelOpen) {
+        ++m_unread;
     }
 
     /* A byte-identical repeat becomes a count on the existing entry rather

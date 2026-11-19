@@ -635,7 +635,11 @@ int main(int argc, char *argv[])
            DBusActivatable= and the rest) rather than exec'ing a guess. */
         QObject::connect(history, &HistoryModel::entryActivated, &app,
                          [notifications](uint id, const QString &desktopEntry) {
-            if (notifications->isLive(id)) {
+            /* Only when it offers one. A live notification without a
+               default action was sent ActionInvoked("default") anyway, which
+               the spec forbids, and closed, while the click went nowhere;
+               it falls through to opening the app instead. */
+            if (notifications->hasDefaultAction(id)) {
                 notifications->invokeAction(id, QStringLiteral("default"));
                 return;
             }
