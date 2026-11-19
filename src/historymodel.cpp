@@ -516,7 +516,12 @@ void HistoryModel::setPanelOpen(bool open)
         /* Reopening should show everything, not silently still be filtered to
            whichever app was drilled into last time, and not still showing a
            settings panel opened three drill-ins ago. */
-        setGroupFilter({});
+        /* One rebuild for whatever changed. Clearing the search without one
+           left the rows filtered by it while the field showed empty, and the
+           field's own reset to "" then matched and returned early: the centre
+           reopened on one app's results with nothing to clear. */
+        bool stale = !m_filter.isEmpty() || !m_search.isEmpty();
+        m_filter.clear();
         m_search.clear();
         m_appSettingsVisible = false;
 
@@ -528,9 +533,12 @@ void HistoryModel::setPanelOpen(bool open)
         if (!m_alwaysCollapsed.isEmpty()) {
             for (const Notification &n : std::as_const(m_all)) {
                 if (m_alwaysCollapsed.contains(n.appName)) {
-                    m_expanded.remove(n.groupKey());
+                    stale |= m_expanded.remove(n.groupKey());
                 }
             }
+        }
+        if (stale) {
+            rebuild();
         }
     }
     Q_EMIT panelOpenChanged();

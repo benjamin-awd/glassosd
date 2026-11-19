@@ -183,6 +183,20 @@ private Q_SLOTS:
         QCOMPARE(m_model->rowCount(), 3);
     }
 
+    /* Closed mid-search, the centre reopens on everything. The search was
+       forgotten without a rebuild, so it reopened filtered by it with an
+       empty field that could not clear it, and Esc then closed it. */
+    void reopeningAfterASearchShowsEverything()
+    {
+        type(QStringLiteral("chat"));
+        QCOMPARE(m_model->rowCount(), 1);
+        m_model->setPanelOpen(false);
+        QTRY_VERIFY(!m_win->isVisible());
+        open();
+        QCOMPARE(m_model->search(), QString());
+        QCOMPARE(m_model->rowCount(), 4);
+    }
+
     void escClearsSearchThenCloses()
     {
         type(QStringLiteral("xyz"));
@@ -255,9 +269,24 @@ private Q_SLOTS:
         QCOMPARE(m_model->rowCount(), 2);
         QCOMPARE(cursor(), 1);
         QCOMPARE(m_model->rowInfo(1).value(QStringLiteral("id")).toUInt(), 1u);
-        key(Qt::Key_Backspace);   // Backspace too, away from the search field
+        QTest::keyClick(m_win, Qt::Key_Backspace, Qt::ControlModifier);   // Cmd+Backspace too
         QCOMPARE(m_model->total(), 1);
         QCOMPARE(cursor(), 0);
+    }
+
+    /* Plain Backspace on the list edits the search, as typed letters go
+       to it. It removed the highlighted entry, for good, from someone
+       fixing a typo after a look down the list. */
+    void backspaceOnTheListEditsTheSearch()
+    {
+        type(QStringLiteral("mail"));
+        key(Qt::Key_Down);
+        key(Qt::Key_Down);
+        QVERIFY(cursor() >= 0);
+        key(Qt::Key_Backspace);
+        QCOMPARE(m_model->total(), 3);
+        QVERIFY(searchFocused());
+        QCOMPARE(m_model->search(), QStringLiteral("mai"));
     }
 
     /* Delete over a header does nothing: clearing a whole group is the

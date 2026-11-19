@@ -796,7 +796,9 @@ Window {
                         Keys.onPressed: (event) => {
                             const mods = event.modifiers & (Qt.ControlModifier | Qt.AltModifier
                                                             | Qt.MetaModifier)
-                            if (mods) {
+                            const removeKey = event.key === Qt.Key_Backspace
+                                           && mods === Qt.ControlModifier
+                            if (mods && !removeKey) {
                                 event.accepted = false
                                 return
                             }
@@ -835,8 +837,24 @@ Window {
                                     HistoryModel.panelOpen = false
                                 }
                                 break
-                            case Qt.Key_Delete:
                             case Qt.Key_Backspace:
+                                /* Plain Backspace edits the search, as typed
+                                   letters go to it: fixing a typo after a
+                                   look down the list removed an entry for
+                                   good. Ctrl+Backspace (Cmd on a Mac layout)
+                                   removes, as Delete does. */
+                                if (!removeKey) {
+                                    if (panel.searchField) {
+                                        setCursor(-1)
+                                        panel.searchField.forceActiveFocus()
+                                        const at = panel.searchField.cursorPosition
+                                        if (at > 0)
+                                            panel.searchField.remove(at - 1, at)
+                                    }
+                                    break
+                                }
+                                // fall through
+                            case Qt.Key_Delete:
                                 keyNav = true
                                 /* removeAt ignores a header, and should: a
                                    header's own clear button empties the whole
