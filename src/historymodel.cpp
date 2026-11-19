@@ -417,6 +417,12 @@ void HistoryModel::record(const Notification &n)
             }
             m_all.removeAt(i);
             m_all.prepend(merged);
+            /* So a cursor on the old entry can follow it (latestId()).
+               Bounded; a cursor only ever needs the last few. */
+            if (m_mergedInto.size() > 256) {
+                m_mergedInto.clear();
+            }
+            m_mergedInto.insert(old.id, merged.id);
             rebuild();
             m_saveTimer.start();   // the entries changed; see rebuild()
             return;
@@ -739,6 +745,14 @@ void HistoryModel::activateEntry(int row)
     }
     const Notification &n = m_rows.at(row).entry;
     Q_EMIT entryActivated(n.id, n.desktopEntry);
+}
+
+uint HistoryModel::latestId(uint id) const
+{
+    for (int hops = 0; hops < 256 && m_mergedInto.contains(id); ++hops) {
+        id = m_mergedInto.value(id);
+    }
+    return id;
 }
 
 QVariantMap HistoryModel::rowInfo(int row) const

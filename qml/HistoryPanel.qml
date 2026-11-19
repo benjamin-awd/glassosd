@@ -738,17 +738,31 @@ Window {
                            what makes pressing Delete repeatedly work through a
                            list. If the list is now empty there is nothing to
                            be on, and focus goes back to the field. */
+                        /* Set while a key here removes the entry, so that
+                           relocate() can tell its own removal from others. */
+                        property bool removing: false
                         function relocate() {
                             if (cursor < 0 || !cursorKey)
                                 return
+                            /* An entry merged with a repeat lives on under the
+                               repeat's id, moved to the front. */
+                            const id = cursorKey.isHeader ? 0 : HistoryModel.latestId(cursorKey.id)
                             for (let r = 0; r < count; ++r) {
                                 const i = HistoryModel.rowInfo(r)
                                 if (i.isHeader === cursorKey.isHeader
                                         && (i.isHeader ? i.groupKey === cursorKey.groupKey
-                                                       : i.id === cursorKey.id)) {
+                                                       : i.id === id)) {
                                     setCursor(r)
                                     return
                                 }
+                            }
+                            /* Gone, and not by a key here: something else took
+                               it (a popup's group cleared, the capacity). The
+                               row that took its place is not what was chosen,
+                               and a Delete would have removed it. */
+                            if (!removing) {
+                                setCursor(-1)
+                                return
                             }
                             if (count > 0) {
                                 setCursor(Math.min(cursor, count - 1))
@@ -860,8 +874,11 @@ Window {
                                    header's own clear button empties the whole
                                    group, which is too much to do on a key
                                    pressed while passing over it. */
-                                if (cursor >= 0)
+                                if (cursor >= 0) {
+                                    removing = true
                                     HistoryModel.removeAt(cursor)
+                                    removing = false
+                                }
                                 break
                             default:
                                 /* Typing while on the list goes to the search,

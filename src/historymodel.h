@@ -158,6 +158,9 @@ public:
        what lets the highlight follow the same entry across a rebuild, which
        renumbers every row each time a notification arrives. */
     Q_INVOKABLE QVariantMap rowInfo(int row) const;
+    /* The id an entry now goes by: an identical repeat merges into it under
+       the new arrival's id, which the centre's cursor follows. */
+    Q_INVOKABLE uint latestId(uint id) const;
 
     Q_INVOKABLE void toggleGroup(const QString &key);
     Q_INVOKABLE void clearGroup(const QString &key);
@@ -222,6 +225,7 @@ private:
        the threshold, but an explicit expand has to survive rebuilds — and an
        explicit collapse has to survive a group shrinking below it. */
     QSet<QString> m_collapsed;   // explicitly collapsed by the user
+    QHash<uint, uint> m_mergedInto;   // old id -> the id it merged into
     QSet<QString> m_expanded;    // explicitly expanded by the user
     /* App names carrying always_collapsed. Cached rather than read per group
        per rebuild, and refreshed by reloadRules(). */

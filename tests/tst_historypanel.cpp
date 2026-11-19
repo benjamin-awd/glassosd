@@ -289,6 +289,45 @@ private Q_SLOTS:
         QCOMPARE(m_model->search(), QStringLiteral("mai"));
     }
 
+    /* The highlighted entry merged with a repeat that just arrived (it
+       moves to the front under the new id): the cursor follows it, and
+       Delete removes it. The cursor stayed on the same row index, which
+       now held a different notification, and Delete removed that. */
+    void theCursorFollowsItsEntryIntoARepeat()
+    {
+        key(Qt::Key_Down);
+        key(Qt::Key_Down);
+        key(Qt::Key_Down);
+        key(Qt::Key_Down);
+        QCOMPARE(m_model->rowInfo(cursor()).value(QStringLiteral("id")).toUInt(), 1u);
+        Notification again = note(10, QStringLiteral("Mail"), QStringLiteral("mail one"));
+        again.body = QStringLiteral("body 1");   // byte-identical: merges
+        m_model->record(again);
+        QCOMPARE(m_model->total(), 3);
+        QCOMPARE(m_model->rowInfo(cursor()).value(QStringLiteral("id")).toUInt(), 10u);
+        key(Qt::Key_Delete);
+        QCOMPARE(m_model->total(), 2);
+        bool chatLeft = false;
+        for (int r = 0; r < m_model->rowCount(); ++r) {
+            const uint id = m_model->rowInfo(r).value(QStringLiteral("id")).toUInt();
+            QVERIFY2(id != 10u, "the merged entry the cursor was on is still there");
+            chatLeft |= id == 3u;
+        }
+        QVERIFY2(chatLeft, "Delete removed a different entry");
+    }
+
+    /* Something else removing the highlighted entry clears the highlight
+       rather than handing it to a neighbour, which a Delete then hit. */
+    void theCursorClearsWhenItsEntryGoesElsewhere()
+    {
+        key(Qt::Key_Down);
+        QCOMPARE(m_model->rowInfo(cursor()).value(QStringLiteral("id")).toUInt(), 3u);
+        m_model->removeIds({3u});
+        QCOMPARE(cursor(), -1);
+        key(Qt::Key_Delete);
+        QCOMPARE(m_model->total(), 2);
+    }
+
     /* Delete over a header does nothing: clearing a whole group is the
        header's own button, not a key pressed while passing over it. */
     void deleteOnHeaderIsIgnored()
