@@ -585,6 +585,82 @@ private Q_SLOTS:
         QVERIFY2(m_model->isHovered(n.id), "the pointer is on the card's button, but the card was told it left");
     }
 
+    /* A swipe that springs back leaves the card held for whatever held it
+       before: here an open group, with the pointer gone (a touch swipe is
+       always off the card). It resent the pointer alone, so the open group
+       expired a timeout later. */
+    void aSpringBackKeepsAnOpenGroupHeld()
+    {
+        QQuickItem *card = groupOf(3, QStringLiteral("Held"));
+        QVERIFY(card);
+        const uint top = card->property("shownId").toUInt();
+        card->setProperty("groupOpen", true);
+        QTRY_COMPARE(card->property("groupProgress").toReal(), 1.0);
+        QVERIFY(m_model->isHovered(top));
+        card->setProperty("swipeRaw", 30.0);       // short of the commit point
+        card->setProperty("releaseVelocity", 0.0);
+        QMetaObject::invokeMethod(card, "endSwipe");
+        QVERIFY2(m_model->isHovered(top), "a spring-back released the open group's hold");
+        QVERIFY(m_model->isLive(top));
+    }
+
+    /* The pointer on a member holds the group but does not bring up the
+       top card's close button, which ends the whole group: offered under a
+       member, it read as that member's. */
+    void hoveringAMemberLeavesTheTopCardsCloseHidden()
+    {
+        QQuickItem *card = groupOf(3, QStringLiteral("Members"));
+        QVERIFY(card);
+        const uint top = card->property("shownId").toUInt();
+        card->setProperty("groupOpen", true);
+        QTRY_COMPARE(card->property("groupProgress").toReal(), 1.0);
+        QQuickItem *member = nullptr;
+        QQuickItem *topClose = nullptr;
+        for (QQuickItem *c : card->childItems()) {
+            if (!member && QByteArray(c->metaObject()->className()).startsWith("MemberCard")) {
+                member = c;
+            }
+            if (c->property("icon").toString() == QStringLiteral("close")) {
+                topClose = c;   // the top card's: a child of the delegate
+            }
+        }
+        QVERIFY(member && topClose);
+        QTest::mouseMove(m_win, member->mapToScene(QPointF(member->width() / 2,
+                                                           member->height() / 2)).toPoint());
+        QTRY_VERIFY(member->property("hovered").toBool());
+        QTest::qWait(300);   // past the close button's grace
+        QVERIFY(m_model->isHovered(top));
+        QVERIFY2(!topClose->isVisible(), "the group's close button showed for a member");
+    }
+
+    /* Typing a reply holds the card wherever the pointer is. Nothing held
+       it, so it expired mid-sentence once the pointer moved off. */
+    void aFocusedReplyHoldsTheCard()
+    {
+        Notification n = note(QStringLiteral("reply to me"));
+        n.inlineReply = true;
+        m_model->insert(n);
+        QTRY_COMPARE(cards().size(), 1);
+        waitSettled();
+        QQuickItem *field = nullptr;
+        std::function<void(QQuickItem *)> walk = [&](QQuickItem *it) {
+            for (QQuickItem *c : it->childItems()) {
+                if (!field && c->inherits("QQuickTextInput")) {
+                    field = c;
+                }
+                walk(c);
+            }
+        };
+        walk(cards().constFirst());
+        QVERIFY(field);
+        QVERIFY(!m_model->isHovered(n.id));
+        field->forceActiveFocus();
+        QTRY_VERIFY(field->hasActiveFocus());
+        QVERIFY2(m_model->isHovered(n.id), "a reply being typed did not hold its card");
+        field->setFocus(false);
+        QTRY_VERIFY(!m_model->isHovered(n.id));
+    }
+
     /* A banner keeps its actions in Options, as macOS does; an alert (one
        that stays until acted on) keeps the button bar. Options also mutes
        the app for a while: the card goes and the app's next popup does not

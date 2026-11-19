@@ -398,7 +398,7 @@ Item {
                            || releaseVelocity > Style.swipeFlick)
         if (!committed) {
             swipeRaw = 0
-            root.hoverChanged(root.pointerOn)
+            root.hoverChanged(root.wantHold)
             return
         }
         /* Dismiss now and let the exit fade run alongside the last of the
@@ -535,7 +535,6 @@ Item {
     /* An open group is being read: it stays until closed or cleared, as an
        expanded stack in Notification Centre does, rather than expiring the
        moment the pointer wanders off it. */
-    onGroupShownChanged: root.hoverChanged(pointerOn || cardMenu.open || groupShown)
 
     /* The header's height is fixed rather than read from the loaded item, so
        cardTop has something to animate towards from the first frame. */
@@ -582,16 +581,25 @@ Item {
        model it had left, the dwell timer resumed, and the card could expire
        under the pointer. A HoverHandler is passive and stays hovered over
        the card's children. */
-    readonly property bool pointerOn: cardPointer.hovered || closeButton.hovered || groupHovers > 0
+    readonly property bool pointerOn: pointerOnCard || groupHovers > 0
+    /* On the top card itself. What the card shows on hover (its close
+       button, Options, the chevron) follows this, not pointerOn: the close
+       button ends the whole group, and showing it while the pointer was on
+       a member offered that by surprise. */
+    readonly property bool pointerOnCard: cardPointer.hovered || closeButton.hovered
+    /* Everything that keeps the card from expiring: being pointed at,
+       Options open, an open group being read, a reply being typed. One
+       expression, because each place that sent the hold used to spell its
+       own and some left parts out: a swipe springing back let an open group
+       or menu expire, and a focused reply never held the card at all, so it
+       could expire mid-sentence once the pointer moved off. */
+    readonly property bool wantHold: pointerOn || cardMenu.open || groupShown || reply.inputFocused
+    onWantHoldChanged: root.hoverChanged(wantHold)
     /* The row can change id in place (coalescing, a stack tag). The hold
        is sent by id, so say it again for the new one. */
     readonly property var shownId: entry ? entry.notifId : 0
-    onShownIdChanged: if (pointerOn || cardMenu.open || groupShown) root.hoverChanged(true)
-    onPointerOnChanged: {
-        root.hoverChanged(pointerOn || cardMenu.open || groupShown)
-        if (!pointerOn)
-            closeGrace.restart()
-    }
+    onShownIdChanged: if (wantHold) root.hoverChanged(true)
+    onPointerOnCardChanged: if (!pointerOnCard) closeGrace.restart()
 
     readonly property real closedHeight: card.implicitHeight
                     + (stackDepth > 0 ? Style.stackDrop(stackDepth - 1) : 0)
@@ -1035,7 +1043,7 @@ Item {
                         Layout.alignment: Qt.AlignVCenter
                         readonly property bool showTime: Appearance.notifyHeader.includes("time")
                         readonly property bool offerOptions: !NotificationModel.screenLocked
-                        readonly property bool optionsUp: offerOptions && (root.pointerOn || cardMenu.open)
+                        readonly property bool optionsUp: offerOptions && (root.pointerOnCard || cardMenu.open)
                         visible: showTime || offerOptions
                         implicitWidth: Math.max(showTime ? timeText.implicitWidth : 0,
                                                 offerOptions ? options.implicitWidth : 0)
@@ -1134,7 +1142,7 @@ Item {
                         width: 20
                         height: 16
                         radius: 8
-                        visible: root.pointerOn && (bodyText.truncated || root.textOpen)
+                        visible: root.pointerOnCard && (bodyText.truncated || root.textOpen)
                                  && !NotificationModel.screenLocked
                         color: expanderArea.containsMouse ? Style.controlFillHover : Style.opaque(Style.cardBackground)
                         border.color: Style.controlEdge
@@ -1256,7 +1264,6 @@ Item {
                     onSettingsRequested: root.settingsRequested()
                     /* Keeps the dwell paused while open: reaching a row can
                        take the pointer off the card. */
-                    onOpenChanged: root.hoverChanged(open || root.pointerOn || root.groupShown)
                 }
             }
         }
@@ -1481,7 +1488,7 @@ Item {
            in NotifyHeader, so a header trimmed to icon,time (to drop the app
            name) silently took the only visible way to dismiss with it. */
         visible: !root.leaving
-                 && (root.pointerOn || closeGrace.running)
+                 && (root.pointerOnCard || closeGrace.running)
         anchors.horizontalCenter: card.left
         anchors.verticalCenter: card.top
         z: 3
