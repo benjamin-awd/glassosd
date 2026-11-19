@@ -220,6 +220,12 @@ Item {
         }
     }
 
+    function dropRegions(w, item) {
+        Surface.clearPanelRegion(w, item)
+        for (let i = 0; i < item.children.length; ++i)
+            dropRegions(w, item.children[i])
+    }
+
     /* Set once the blur region has been dropped, so it is not dropped again on
        every remaining frame of the exit. */
     property bool blurDropped: false
@@ -273,13 +279,12 @@ Item {
         if (root.leaving && Style.slideTravel <= 0 && reveal < Style.blurDropAt) {
             if (!root.blurDropped) {
                 root.blurDropped = true
-                if (Window.window) {
-                    Surface.clearPanelRegion(Window.window, card)
-                    for (let i = 0; i < stackSurface.sheets.count; ++i) {
-                        const s = stackSurface.sheets.itemAt(i)
-                        if (s) Surface.clearPanelRegion(Window.window, s)
-                    }
-                }
+                /* Everything the card has registered, not a list of what
+                   it might have: the open group's member cards, its header
+                   buttons and the centre link kept their regions here, and
+                   faded as a lit slab of glass with nothing in it. */
+                if (Window.window)
+                    root.dropRegions(Window.window, root)
             }
             return
         }
@@ -509,8 +514,13 @@ Item {
        withheld there, and a group left open must not keep showing what the
        lock screen hides. */
     property bool groupOpen: false
-    readonly property bool groupShown: groupOpen && root.entry.groupCount > 1
-                                       && !NotificationModel.screenLocked
+    /* Forgotten once the group can no longer be shown: it fell to one card,
+       or the screen locked. The flag outlived the group, so the app's next
+       burst, coalescing into this same card, sprang open with nobody
+       clicking, and unlocking reopened what was open before the lock. */
+    readonly property bool groupPossible: root.entry.groupCount > 1 && !NotificationModel.screenLocked
+    onGroupPossibleChanged: if (!groupPossible) groupOpen = false
+    readonly property bool groupShown: groupOpen && groupPossible
     /* Cards before the rest are left to the centre. Past five the stack
        stops being a glance; a link under them opens the whole group. */
     readonly property int groupRowsMax: 5

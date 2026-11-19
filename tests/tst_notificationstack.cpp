@@ -633,6 +633,55 @@ private Q_SLOTS:
         QVERIFY2(!topClose->isVisible(), "the group's close button showed for a member");
     }
 
+    /* A fading open group gives back every region at the drop, not just the
+       top card's: the member cards, the header's buttons and the centre
+       link kept theirs, a lit slab of glass with no card in it. */
+    void aFadingOpenGroupDropsAllItsRegions()
+    {
+        /* Dropped early in a long exit, so the card is still there to be
+           checked against. */
+        setTheme({{QStringLiteral("motion.in"), 120}, {QStringLiteral("motion.out"), 2000},
+                  {QStringLiteral("motion.slideTravel"), 0},
+                  {QStringLiteral("motion.blurDropAt"), 0.95}});
+        m_model->setExitMs(2000);
+        QQuickItem *card = groupOf(8, QStringLiteral("Fade"));
+        QVERIFY(card);
+        card->setProperty("groupOpen", true);
+        QTRY_COMPARE(card->property("groupProgress").toReal(), 1.0);
+        QTest::qWait(50);
+        QVERIFY(holders() > 3);
+        m_model->dismiss(card->property("shownId").toUInt());
+        QTRY_VERIFY_WITH_TIMEOUT(card->property("blurDropped").toBool(), 2000);
+        QTest::qWait(50);
+        QVERIFY(cards().contains(card));   // still fading
+        QCOMPARE(holders(), 0);
+    }
+
+    /* An open group that falls to one card forgets it was open. The flag
+       stayed set, and the app's next burst, coalescing into the same card,
+       sprang open with nobody clicking. */
+    void aGroupThatEndsIsNoLongerOpen()
+    {
+        QQuickItem *card = groupOf(3, QStringLiteral("Ends"));
+        QVERIFY(card);
+        card->setProperty("groupOpen", true);
+        QTRY_COMPARE(card->property("groupProgress").toReal(), 1.0);
+        const QVariantList members = m_model->index(0).data(NotificationModel::MembersRole).toList();
+        for (const QVariant &mem : members) {
+            m_model->closeId(mem.toMap().value(QStringLiteral("id")).toUInt(), CloseReason::Closed);
+        }
+        QTRY_COMPARE(card->property("groupProgress").toReal(), 0.0);
+        for (int i = 0; i < 3; ++i) {
+            Notification x = note(QStringLiteral("again %1").arg(i));
+            x.appName = QStringLiteral("Ends");
+            m_model->insert(x);
+        }
+        QTRY_VERIFY(m_model->index(0).data(NotificationModel::GroupCountRole).toInt() > 1);
+        QCOMPARE(cards().value(0), card);   // the same card, replaced in place
+        QTest::qWait(50);
+        QVERIFY2(!card->property("groupShown").toBool(), "the next burst opened the group by itself");
+    }
+
     /* Typing a reply holds the card wherever the pointer is. Nothing held
        it, so it expired mid-sentence once the pointer moved off. */
     void aFocusedReplyHoldsTheCard()
