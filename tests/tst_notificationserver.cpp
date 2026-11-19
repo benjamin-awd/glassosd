@@ -331,6 +331,38 @@ private Q_SLOTS:
         QCOMPARE(f.icon(id), QStringLiteral("image://icon//tmp/avatar.png"));
     }
 
+    /* The avatar no longer replaces the sender's icon: the card badges the
+       avatar with it. A plain app icon gets no badge (it would be the same
+       icon twice). */
+    void anAvatarIsBadgedWithTheSendersIcon()
+    {
+        Fixture f;
+        const uint withAvatar = f.notify(QStringLiteral("avatar"),
+                                         {{QStringLiteral("image-path"), QStringLiteral("/tmp/avatar.png")}},
+                                         QStringLiteral("org.example.Chat"));
+        QCOMPARE(f.role(withAvatar, NotificationModel::BadgeSourceRole).toString(),
+                 QStringLiteral("image://icon/org.example.Chat"));
+        const uint plain = f.notify(QStringLiteral("plain"), {}, QStringLiteral("org.example.Chat"));
+        QCOMPARE(f.role(plain, NotificationModel::BadgeSourceRole).toString(), QString());
+    }
+
+    /* A hidden card on the lock screen shows the sender's icon, not the
+       avatar. image-path used to overwrite app_icon, so the "app icon" left
+       on a hidden card was the contact's photo. */
+    void aHiddenCardShowsTheSenderNotTheAvatar()
+    {
+        Fixture f;
+        f.model.setLockPrivacyDefault(Notification::LockPrivacy::HideContent);
+        f.model.setScreenLocked(true);
+        const uint id = f.notify(QStringLiteral("from someone"),
+                                 {{QStringLiteral("image-path"), QStringLiteral("/tmp/avatar.png")}},
+                                 QStringLiteral("org.example.Chat"));
+        QCOMPARE(f.icon(id), QStringLiteral("image://icon/org.example.Chat"));
+        QCOMPARE(f.role(id, NotificationModel::BadgeSourceRole).toString(), QString());
+        f.model.setScreenLocked(false);
+        QCOMPARE(f.icon(id), QStringLiteral("image://icon//tmp/avatar.png"));
+    }
+
     /* A path has to load as a file. QIcon::fromTheme() only knows names:
        given a path, Qt's own loader finds nothing, and the notification
        showed a generic icon or none. */

@@ -248,6 +248,7 @@ uint NotificationServer::handleNotify(const QString &appName,
     Notification n;
     n.appName = appName;
     n.appIcon = localIcon(appIcon);
+    n.senderIcon = n.appIcon;
     /* Clipped before sanitising as well as after (in deliver()), so a
        megabyte of markup costs nothing to throw away. */
     n.summary = sanitiseMarkup(summary.left(maxSummary));
@@ -357,6 +358,7 @@ uint NotificationServer::deliver(Notification &n)
     n.category.truncate(maxName);
     n.stackTag.truncate(maxName);
     n.appIcon.truncate(maxPath);
+    n.senderIcon.truncate(maxPath);
     n.replyPlaceholder.truncate(maxActionText);
     n.replySubmitText.truncate(maxActionText);
 
@@ -365,13 +367,16 @@ uint NotificationServer::deliver(Notification &n)
        naming the app only in the desktop-entry hint. Either way the desktop
        file is the one place a name and icon can come from, and without this a
        Flatpak renders as an anonymous card. */
-    if (n.appName.isEmpty() || n.appIcon.isEmpty()) {
+    if (n.appName.isEmpty() || n.appIcon.isEmpty() || n.senderIcon.isEmpty()) {
         const DesktopInfo info = lookupDesktopEntry(n.desktopEntry);
         if (n.appName.isEmpty() && !info.name.isEmpty()) {
             n.appName = info.name;
         }
         if (n.appIcon.isEmpty() && !info.icon.isEmpty()) {
             n.appIcon = info.icon;
+        }
+        if (n.senderIcon.isEmpty() && !info.icon.isEmpty()) {
+            n.senderIcon = info.icon;
         }
     }
 

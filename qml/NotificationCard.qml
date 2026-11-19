@@ -844,6 +844,50 @@ Item {
                     readonly property bool isSymbolic:
                         Icons.isCustom(root.entry.iconSource)
                         || String(root.entry.iconSource).indexOf("symbolic") !== -1
+                    /* A picture of the message's own (a contact's avatar) is
+                       drawn as a circle, the way macOS shows a sender. */
+                    readonly property bool isPicture: (root.entry.badgeSource || "") !== ""
+                    visible: !isPicture
+                }
+
+                /* The circular avatar: the same image through a round mask. */
+                Item {
+                    id: avatarMask
+                    anchors.fill: appIcon
+                    visible: false
+                    layer.enabled: appIcon.isPicture
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: width / 2
+                    }
+                }
+                MultiEffect {
+                    anchors.fill: appIcon
+                    visible: appIcon.isPicture
+                    source: appIcon
+                    maskEnabled: true
+                    maskSource: avatarMask
+                    maskThresholdMin: 0.5
+                    maskSpreadAtMin: 1.0
+                }
+
+                /* The sender's icon on the avatar's corner, as macOS badges a
+                   contact's photo with the app it came through. */
+                Image {
+                    id: badge
+                    visible: appIcon.isPicture
+                    width: Math.round(appIcon.width * 0.5)
+                    height: width
+                    anchors.right: appIcon.right
+                    anchors.bottom: appIcon.bottom
+                    anchors.rightMargin: -Math.round(width * 0.2)
+                    anchors.bottomMargin: -Math.round(width * 0.2)
+                    source: root.entry.badgeSource || ""
+                    sourceSize: Qt.size(width * Screen.devicePixelRatio,
+                                        width * Screen.devicePixelRatio)
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                    mipmap: true
                 }
             }
 

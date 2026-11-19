@@ -92,7 +92,12 @@ struct Notification {
     uint id = 0;
     QString appName;
     QString desktopEntry;   // "desktop-entry" hint; better group key than appName
-    QString appIcon;
+    QString appIcon;        // the picture the card shows (image-path wins over app_icon)
+    /* Who sent it: app_icon, else the desktop entry's icon. Never the
+       message's own picture, so the card can badge an avatar with it and a
+       hidden card on the lock screen can show it instead of the avatar.
+       Not persisted: history and snoozes restore without it. */
+    QString senderIcon;
     QString summary;
     QString body;
     QStringList actions;    // flat [key, label, key, label, ...] per the spec

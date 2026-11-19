@@ -19,6 +19,23 @@
 
 namespace
 {
+/* Whether the card's picture is the message's own (an inline image, or an
+   image-path such as a contact's avatar) rather than the sender's logo. A
+   notification restored without senderIcon counts as having one, so a
+   hidden card never shows a picture it cannot tell apart from a logo. */
+bool hasPicture(const Notification &n)
+{
+    return n.image.isValid() || (!n.appIcon.isEmpty() && n.appIcon != n.senderIcon);
+}
+
+/* What a hidden card shows in place of its picture. image-path used to
+   overwrite app_icon, so this "app icon" was the contact's avatar: the lock
+   screen hid a message's text and showed whose photo it was. */
+QString senderLogo(const Notification &n)
+{
+    const QString logo = hasPicture(n) ? n.senderIcon : n.appIcon;
+    return logo.isEmpty() ? QString() : QStringLiteral("image://icon/") + logo;
+}
 constexpr int kTickMs = 250;
 }
 
@@ -102,7 +119,9 @@ QVariant NotificationModel::data(const QModelIndex &index, int role) const
             case SummaryRole: return tr("Notification hidden");
             case BodyRole:    return QString();
             case IconSourceRole:
-                return n.appIcon.isEmpty() ? QString() : QStringLiteral("image://icon/") + n.appIcon;
+                return senderLogo(n);
+            case BadgeSourceRole:
+                return QString();
             default:          break;
             }
         }
@@ -116,7 +135,9 @@ QVariant NotificationModel::data(const QModelIndex &index, int role) const
                     ? tr("Message hidden")
                     : tr("%1: message hidden").arg(n.lockKeep.toHtmlEscaped());
             case IconSourceRole:
-                return n.appIcon.isEmpty() ? QString() : QStringLiteral("image://icon/") + n.appIcon;
+                return senderLogo(n);
+            case BadgeSourceRole:
+                return QString();
             default:          break;
             }
         }
@@ -175,6 +196,15 @@ QVariant NotificationModel::data(const QModelIndex &index, int role) const
         }
         return n.received.toLocalTime().toString(QStringLiteral("HH:mm"));
     }
+    case BadgeSourceRole:
+        /* The sender's icon, small on the corner of a picture, the way macOS
+           badges a contact's photo with the app it came through. Only when
+           there is a picture: on a plain app icon it would be the same icon
+           twice. */
+        if (hasPicture(n) && !n.senderIcon.isEmpty()) {
+            return QStringLiteral("image://icon/") + n.senderIcon;
+        }
+        return QString();
     case IconSourceRole:
         /* image-data outranks a themed name, matching the spec's ordering and
            mako's behaviour: an inline image is what the app actually wants
@@ -208,6 +238,7 @@ QHash<int, QByteArray> NotificationModel::roleNames() const
         {InlineReplyRole, "inlineReply"},
         {ReplyPlaceholderRole, "replyPlaceholder"},
         {ReplySubmitTextRole, "replySubmitText"},
+        {BadgeSourceRole, "badgeSource"},
     };
 }
 
@@ -277,6 +308,9 @@ bool NotificationModel::replaceById(const Notification &n)
         if (updated.appIcon.isEmpty() && !updated.image.isValid()) {
             updated.appIcon = m_displayed.at(row).appIcon;
         }
+        if (updated.senderIcon.isEmpty()) {
+            updated.senderIcon = m_displayed.at(row).senderIcon;
+        }
         m_displayed[row] = updated;
         Q_EMIT dataChanged(index(row), index(row));
         return true;
@@ -332,6 +366,9 @@ bool NotificationModel::replaceByTag(const Notification &n)
             if (updated.appIcon.isEmpty() && !updated.image.isValid()) {
                 updated.appIcon = old.appIcon;   // inherit rather than go blank
             }
+            if (updated.senderIcon.isEmpty()) {
+                updated.senderIcon = old.senderIcon;
+            }
             m_displayed[i] = updated;
             Q_EMIT dataChanged(index(i), index(i));
             /* A different id is going away, so this one does need announcing.
@@ -347,6 +384,9 @@ bool NotificationModel::replaceByTag(const Notification &n)
             updated.groupCount = old.groupCount;
             if (updated.appIcon.isEmpty() && !updated.image.isValid()) {
                 updated.appIcon = old.appIcon;
+            }
+            if (updated.senderIcon.isEmpty()) {
+                updated.senderIcon = old.senderIcon;
             }
             m_waiting[i] = updated;
             Q_EMIT notificationClosed(old.id, CloseReason::Expired);
@@ -965,7 +1005,7 @@ void NotificationModel::setLockPrivacyDefault(Notification::LockPrivacy policy)
     m_lockDefault = policy;
     if (privacyActive() && !m_displayed.isEmpty()) {
         Q_EMIT dataChanged(index(0), index(m_displayed.size() - 1),
-                           {SummaryRole, BodyRole, IconSourceRole});
+                           {SummaryRole, BodyRole, IconSourceRole, BadgeSourceRole});
     }
 }
 
@@ -1001,7 +1041,7 @@ void NotificationModel::setScreenSharing(bool sharing)
     }
     if (!m_displayed.isEmpty()) {
         Q_EMIT dataChanged(index(0), index(m_displayed.size() - 1),
-                           {SummaryRole, BodyRole, IconSourceRole});
+                           {SummaryRole, BodyRole, IconSourceRole, BadgeSourceRole});
     }
 }
 
@@ -1031,7 +1071,7 @@ void NotificationModel::setScreenLocked(bool locked)
     /* The rest only changed how they read, so redraw them in place. */
     if (!m_displayed.isEmpty()) {
         Q_EMIT dataChanged(index(0), index(m_displayed.size() - 1),
-                           {SummaryRole, BodyRole, IconSourceRole, ActionsRole,
+                           {SummaryRole, BodyRole, IconSourceRole, BadgeSourceRole, ActionsRole,
                             HasDefaultActionRole, InlineReplyRole});
     }
     Q_EMIT screenLockedChanged();

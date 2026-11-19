@@ -22,6 +22,7 @@
 #include "notificationmodel.h"
 
 #include <QQmlApplicationEngine>
+#include <QQuickImageProvider>
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QWheelEvent>
@@ -34,6 +35,24 @@
 namespace
 {
 uint g_nextId = 1;
+
+/* image://icon and image://notifyimage are served by the daemon; here any
+   request gets a blank square. */
+class BlankImages : public QQuickImageProvider
+{
+public:
+    BlankImages() : QQuickImageProvider(QQuickImageProvider::Image) {}
+    QImage requestImage(const QString &, QSize *size, const QSize &requested) override
+    {
+        const QSize s = requested.isValid() ? requested : QSize(32, 32);
+        if (size) {
+            *size = s;
+        }
+        QImage img(s, QImage::Format_ARGB32_Premultiplied);
+        img.fill(Qt::gray);
+        return img;
+    }
+};
 
 Notification note(const QString &summary, const QString &app = QStringLiteral("app"))
 {
@@ -125,6 +144,8 @@ private Q_SLOTS:
 
         m_engine = new QQmlApplicationEngine;
         m_engine->addImportPath(QStringLiteral(GLASSOSD_QML_TEST_IMPORTS));
+        m_engine->addImageProvider(QStringLiteral("icon"), new BlankImages);
+        m_engine->addImageProvider(QStringLiteral("notifyimage"), new BlankImages);
         connect(m_engine, &QQmlEngine::warnings, this, [this](const QList<QQmlError> &list) {
             for (const QQmlError &e : list) {
                 m_warnings << e.toString();
@@ -494,6 +515,28 @@ private Q_SLOTS:
         QVERIFY(!m_win->isVisible());
         QTRY_VERIFY_WITH_TIMEOUT(m_win->isVisible(), 2000);
         QCOMPARE(cards().size(), 1);
+    }
+
+    /* A contact's avatar is drawn round and badged with the sender's icon. */
+    void anAvatarCarriesTheSendersBadge()
+    {
+        Notification n = note(QStringLiteral("Jane"));
+        n.appIcon = QStringLiteral("/tmp/avatar.png");
+        n.senderIcon = QStringLiteral("org.example.Chat");
+        m_model->insert(n);
+        QTRY_COMPARE(cards().size(), 1);
+        QQuickItem *badge = nullptr;
+        std::function<void(QQuickItem *)> walk = [&](QQuickItem *it) {
+            for (QQuickItem *c : it->childItems()) {
+                if (c->property("source").toString() == QLatin1String("image://icon/org.example.Chat")) {
+                    badge = c;
+                }
+                walk(c);
+            }
+        };
+        walk(cards().constFirst());
+        QVERIFY2(badge, "no badge image");
+        QVERIFY(badge->isVisible());
     }
 
     /* e099271: a settings change re-sends the position. With a sliding theme

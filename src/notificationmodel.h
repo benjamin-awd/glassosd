@@ -64,6 +64,7 @@ public:
         ReplyPlaceholderRole,
         ReplySubmitTextRole,
         ProgressRole,
+        BadgeSourceRole,
     };
     Q_ENUM(Roles)
 
