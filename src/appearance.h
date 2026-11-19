@@ -110,6 +110,9 @@ class Appearance : public QObject
     Q_PROPERTY(QString iconStyle READ iconStyle NOTIFY changed)
     /* Whether the OSD draws its icon chip at all. */
     Q_PROPERTY(bool osdIcon READ osdIcon NOTIFY changed)
+    /* Whether the OSD writes the level as a number beside its bar. macOS
+       shows the bar alone. */
+    Q_PROPERTY(bool osdPercent READ osdPercent NOTIFY changed)
 
 public:
     explicit Appearance(QObject *parent = nullptr);
@@ -140,6 +143,7 @@ public:
     QStringList notifyHeader() const { return m_notifyHeader; }
     QString iconStyle() const { return m_iconStyle; }
     bool osdIcon() const { return m_osdIcon; }
+    bool osdPercent() const { return m_osdPercent; }
     Q_INVOKABLE bool hasWidget(const QString &name) const { return m_widgets.contains(name); }
     Q_INVOKABLE int widgetOrder(const QString &name) const { return m_widgets.indexOf(name); }
 
@@ -167,7 +171,7 @@ private:
     int m_notifyMarginX = 0;
     int m_notifyMarginY = 0;
     int m_centreSide = 8;          // Right
-    int m_osdAnchor = 1;           // Top
+    int m_osdAnchor = 1;           // Top; layer-shell anchor bits
     int m_bodyLines = 4;
     int m_centreBodyLines = 3;
     bool m_centreCards = true;
@@ -176,4 +180,5 @@ private:
     QStringList m_notifyHeader;
     QString m_iconStyle = QStringLiteral("own");
     bool m_osdIcon = true;
+    bool m_osdPercent = true;
 };

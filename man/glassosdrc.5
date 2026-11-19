@@ -186,7 +186,12 @@ below.
 .TP
 .B CentrePosition ", " OsdPosition
 Which side the control centre opens on, and whether the OSD sits at the top,
-centre or bottom.
+the top right (as macOS 26 shows it), the centre or the bottom:
+.BR top ,
+.BR top-right ,
+.B centre
+or
+.BR bottom .
 .TP
 .B Widgets
 The
@@ -227,6 +232,10 @@ middle\-clicking, and so does swiping it aside.
 .B OsdIcon
 Whether the volume and brightness OSD draws its icon. Default true. False
 leaves the level and the text.
+.TP
+.B OsdPercent
+Whether the OSD writes the volume or brightness level as a number beside its
+bar. Default true. False shows the bar alone, as macOS does.
 .TP
 .B IconStyle
 .B own

@@ -31,6 +31,19 @@ Window {
        at osdTopMargin would push the *visible* panel down by the pad. Take it
        back off the margin so the OSD sits exactly where it did before. */
     readonly property int edgeMargin: Math.max(0, Style.osdTopMargin - Style.shadowPad)
+    /* top-right lines up with the popups' column instead, as macOS 26 puts
+       its volume module where its banners appear: the popups' own margins,
+       applied the way NotificationStack applies them (the shadow pad on both
+       surfaces then puts the panel's edge on the cards' edge). osdTopMargin
+       is tuned for a pill across the middle and left it far from the corner. */
+    readonly property bool corner: (Appearance.osdAnchor & 8) !== 0
+    function marginTop(a) { return a & 1 ? (corner ? Appearance.notifyMarginY : edgeMargin) : 0 }
+    /* The popup surface reaches the screen edge and insets its cards by
+       NotifyMarginX inside, so its cards stand NotifyMarginX from the edge.
+       This one carries its shadow pad on every side; taking the pad back off
+       (a negative margin, which layer-shell allows) puts the panel there too. */
+    function marginRight(a) { return a & 8 ? Appearance.notifyMarginX - Style.shadowPad : 0 }
+    function marginBottom(a) { return a & 2 ? edgeMargin : 0 }
 
     /* Unmapped only once an empty frame has been presented. Hiding the window
        in the same tick the fade reached zero meant its last frame on screen
@@ -95,8 +108,7 @@ Window {
            fullscreen windows and the OSD would simply never appear. */
         const a = Appearance.osdAnchor
         Surface.initLayerShell(win, "glassosd-osd", a,
-                               a === 1 ? win.edgeMargin : 0, 0,
-                               a === 2 ? win.edgeMargin : 0, 0,
+                               win.marginTop(a), win.marginRight(a), win.marginBottom(a), 0,
                                false, -1, 3)
         /* Confine input to the panel.
 
@@ -120,8 +132,7 @@ Window {
             Surface.setOutput(win, Appearance.osdOutput)
             const a = Appearance.osdAnchor
             Surface.setPosition(win, a,
-                                a === 1 ? win.edgeMargin : 0, 0,
-                                a === 2 ? win.edgeMargin : 0, 0)
+                                win.marginTop(a), win.marginRight(a), win.marginBottom(a), 0)
         }
     }
 
@@ -349,6 +360,9 @@ Window {
                 horizontalAlignment: OsdModel.showingProgress ? Text.AlignRight
                                    : aloneInThePill ? Text.AlignHCenter
                                                     : Text.AlignLeft
+                /* OsdPercent=false: the bar alone, as macOS shows it. Text
+                   OSDs (caps lock and the like) keep their text. */
+                visible: !OsdModel.showingProgress || Appearance.osdPercent
                 text: OsdModel.showingProgress
                       ? Math.round(OsdModel.value) + "%"
                       : OsdModel.text

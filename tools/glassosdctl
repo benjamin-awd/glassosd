@@ -167,7 +167,8 @@ glassosdctl <command>
                          exclusive zone of its own, such as a browser's tab
                          strip. One number sets both.
   centre-position [l|r]  Which side the notification centre slides in from
-  osd-position [where]   top (default), centre or bottom
+  osd-position [where]   top (default), top-right (as macOS 26), centre or bottom
+  osd-percent [on|off]   Whether the OSD writes the level as a number (default on)
   header [list|none|default]
                          What the top row of a notification popup shows, in
                          order: icon, appname, time, snooze, settings, close.
@@ -735,9 +736,9 @@ SNZ
   osd-position)
     case "${1:-}" in
       "")                    echo "osd-position: $(cfg_or Appearance OsdPosition top)" ;;
-      top|bottom)            cfg_write Appearance OsdPosition "$1"; echo "osd-position = $1" ;;
+      top|bottom|top-right)  cfg_write Appearance OsdPosition "$1"; echo "osd-position = $1" ;;
       centre|center)         cfg_write Appearance OsdPosition centre; echo "osd-position = centre" ;;
-      *) echo "osd-position takes 'top', 'centre' or 'bottom'" >&2; exit 1 ;;
+      *) echo "osd-position takes 'top', 'top-right', 'centre' or 'bottom'" >&2; exit 1 ;;
     esac ;;
   header)
     # The popups' top row. Named apart from `widgets` because that one is the
@@ -785,6 +786,13 @@ SNZ
         cfg_write Appearance IconStyle "$1"
         echo "icons = $1 (applied live)" ;;
       *) echo "icons takes 'own' or 'theme'" >&2; exit 1 ;;
+    esac ;;
+  osd-percent)
+    case "${1:-}" in
+      "")        echo "osd-percent: $(cfg_or Appearance OsdPercent true)" ;;
+      on|true)   cfg_write Appearance OsdPercent true;  echo "osd-percent = on" ;;
+      off|false) cfg_write Appearance OsdPercent false; echo "osd-percent = off" ;;
+      *) echo "osd-percent takes 'on' or 'off'" >&2; exit 1 ;;
     esac ;;
   osd-icon)
     case "${1:-}" in

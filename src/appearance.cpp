@@ -188,8 +188,12 @@ void Appearance::reload()
 
     const QString osd = g.readEntry("OsdPosition", QStringLiteral("top"))
                             .trimmed().toLower();
+    /* Layer-shell anchor bits: Top 1, Bottom 2, Right 8. top-right is where
+       macOS 26 shows volume and brightness: a small module under the
+       menu bar's right end rather than a pill across the middle. */
     m_osdAnchor = (osd == QLatin1String("bottom")) ? 2
                 : (osd == QLatin1String("centre") || osd == QLatin1String("center")) ? 0
+                : (osd == QLatin1String("top-right")) ? (1 | 8)
                 : 1;
 
     /* The canonical order, and the default. Every widget the centre can draw
@@ -232,6 +236,7 @@ void Appearance::reload()
     }
 
     m_osdIcon = g.readEntry("OsdIcon", true);
+    m_osdPercent = g.readEntry("OsdPercent", true);
 
     /* Anything that is not "theme" means our own, so a typo leaves the
        surfaces looking as they always have rather than half-swapped. */
