@@ -164,6 +164,7 @@ public:
        from under someone who is visibly reading it. Off by request for people
        who would rather popups clear on schedule regardless. */
     Q_INVOKABLE void setHovered(uint id, bool hovered);
+    bool isHovered(uint id) const { return m_hovered.contains(id); }
     void setHoverPause(bool on);
     bool hoverPause() const { return m_hoverPause; }
     Q_INVOKABLE void invokeAction(uint id, const QString &key);

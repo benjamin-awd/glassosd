@@ -539,6 +539,36 @@ private Q_SLOTS:
         QVERIFY(badge->isVisible());
     }
 
+    /* The dwell timer pauses while the pointer is anywhere on the card,
+       including on its buttons. A button's own MouseArea took the hover
+       from the card's, so resting on an action reported the pointer gone
+       and the card could expire under it. */
+    void restingOnAnActionKeepsTheCardPaused()
+    {
+        Notification n = note(QStringLiteral("with an action"));
+        n.actions = QStringList{QStringLiteral("reply"), QStringLiteral("Reply")};
+        m_model->insert(n);
+        QTRY_COMPARE(cards().size(), 1);
+        waitSettled();
+        QQuickItem *button = nullptr;
+        std::function<void(QQuickItem *)> walk = [&](QQuickItem *it) {
+            for (QQuickItem *c : it->childItems()) {
+                if (c->property("text").toString() == QLatin1String("Reply")) {
+                    button = c->parentItem();
+                }
+                walk(c);
+            }
+        };
+        walk(cards().constFirst());
+        QVERIFY(button);
+        const QPointF on = button->mapToScene(QPointF(button->width() / 2, button->height() / 2));
+        QTest::mouseMove(m_win, drawn(cards().constFirst()).center().toPoint());
+        QTRY_VERIFY(m_model->isHovered(n.id));
+        QTest::mouseMove(m_win, on.toPoint());
+        QTest::qWait(50);
+        QVERIFY2(m_model->isHovered(n.id), "the pointer is on the card's button, but the card was told it left");
+    }
+
     /* e099271: a settings change re-sends the position. With a sliding theme
        the right margin is folded into the layout, and passing it to the
        layer shell as well pushed the surface inward on every change. */

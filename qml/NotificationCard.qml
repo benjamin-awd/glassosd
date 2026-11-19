@@ -395,7 +395,7 @@ Item {
                            || releaseVelocity > Style.swipeFlick)
         if (!committed) {
             swipeRaw = 0
-            root.hoverChanged(cardHover.containsMouse)
+            root.hoverChanged(root.pointerOn)
             return
         }
         /* Dismiss now and let the exit fade run alongside the last of the
@@ -444,6 +444,22 @@ Item {
     signal replySent(string text)
     signal activated()
     signal hoverChanged(bool hovered)
+
+    /* Whether the pointer is on the card: anywhere on it, its buttons
+       included, or on the close button hanging off its corner.
+
+       It was the card's MouseArea's containsMouse, but a hover-enabled
+       MouseArea on top (an action, Show N more, the close button) takes the
+       hover from the one beneath. Resting the pointer on an action told the
+       model it had left, the dwell timer resumed, and the card could expire
+       under the pointer. A HoverHandler is passive and stays hovered over
+       the card's children. */
+    readonly property bool pointerOn: cardPointer.hovered || closeButton.hovered
+    onPointerOnChanged: {
+        root.hoverChanged(pointerOn || cardMenu.open)
+        if (!pointerOn)
+            closeGrace.restart()
+    }
 
     implicitHeight: card.implicitHeight
                     + (stackDepth > 0 ? Style.stackDrop(stackDepth - 1) : 0)
@@ -757,20 +773,19 @@ Item {
             }
         }
 
+        HoverHandler {
+            id: cardPointer
+        }
+
         MouseArea {
             id: cardHover
             anchors.fill: parent
             hoverEnabled: true
             acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
-            /* Pause the dwell timer while the pointer is over the card, and
-               while the menu is open: reaching a row can take the pointer
-               off the card, and a card that expired mid-menu would take the
-               menu with it. */
-            onContainsMouseChanged: {
-                root.hoverChanged(containsMouse || cardMenu.open)
-                if (!containsMouse)
-                    closeGrace.restart()
-            }
+            /* Whether the pointer is here is root.pointerOn's job, which
+               also keeps the dwell paused while the menu is open: reaching a
+               row can take the pointer off the card, and a card that expired
+               mid-menu would take the menu with it. */
             onClicked: (mouse) => {
                 /* Right-click opens the card's own menu. Snooze and settings
                    used to sit on the card permanently, which is a lot of
@@ -1178,7 +1193,7 @@ Item {
             }
             function close() {
                 open = false
-                root.hoverChanged(cardHover.containsMouse)
+                root.hoverChanged(root.pointerOn)
             }
 
             /* Put away if the card starts leaving under it. */
@@ -1275,7 +1290,7 @@ Item {
         icon: "close"
         visible: Appearance.notifyHeader.includes("close")
                  && !root.leaving
-                 && (cardHover.containsMouse || hovered || closeGrace.running)
+                 && (root.pointerOn || closeGrace.running)
         anchors.horizontalCenter: card.left
         anchors.verticalCenter: card.top
         z: 3
