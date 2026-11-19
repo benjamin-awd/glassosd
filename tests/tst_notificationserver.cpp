@@ -352,6 +352,20 @@ private Q_SLOTS:
         QCOMPARE(f.role(b, NotificationModel::SummaryRole).toString(), QStringLiteral("claims a future id"));
     }
 
+    /* Snoozes restored after a restart come back without an id. They are
+       given one from the same sequence, so they can never share an id with
+       each other or with anything Notify hands out. */
+    void mintedIdsNeverCollideWithIssuedOnes()
+    {
+        Fixture f;
+        const uint a = f.notify(QStringLiteral("first"));
+        const uint m1 = f.server.mintId();
+        const uint m2 = f.server.mintId();
+        const uint b = f.notify(QStringLiteral("second"));
+        QVERIFY(m1 != 0 && m2 != 0);
+        QCOMPARE(QSet<uint>({a, m1, m2, b}).size(), 4);
+    }
+
     /* body-images is not advertised; an <img> made the daemon fetch URLs and
        open local paths (a FIFO froze it). Unterminated tags got through to
        StyledText as well, so stray '<' is escaped. */

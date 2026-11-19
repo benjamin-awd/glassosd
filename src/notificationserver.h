@@ -62,6 +62,13 @@ public:
        this a fresh notification reuses an old entry's id and overwrites it. */
     void reserveIds(uint highest);
 
+    /* A fresh id from the same sequence Notify uses, for a notification that
+       re-enters the model by another door. A snooze restored from disk
+       carries no id (ids do not survive a restart), and inserted as-is every
+       one of them was id 0: dismissing one closed whichever came first, and
+       its actions went to the wrong card. */
+    uint mintId() { return m_nextId++; }
+
     uint handleNotify(const QString &appName,
                       uint replacesId,
                       const QString &appIcon,
