@@ -283,8 +283,15 @@ void Surface::setPanelRegion(QQuickWindow *window, QObject *panel, const QRectF 
             clearPanelRegion(window, panel);
         });
     }
-    perWindow.insert(panel, {rect, radius});
+    perWindow.insert(panel, {rect, radius, m_registeringInputOnly});
     scheduleRecompute(window);
+}
+
+void Surface::setInputRegion(QQuickWindow *window, QObject *panel, const QRectF &rect, qreal radius)
+{
+    m_registeringInputOnly = true;
+    setPanelRegion(window, panel, rect, radius);
+    m_registeringInputOnly = false;
 }
 
 void Surface::scheduleRecompute(QQuickWindow *window)
@@ -534,12 +541,14 @@ void Surface::recompute(QQuickWindow *window)
     }
     const QRect surfaceRect(0, 0, window->width(), window->height());
     QRegion combined;
+    QRegion inputOnly;
     for (const Contribution &c : std::as_const(live)) {
-        combined += roundedRegion(innerRect(c.rect), qRound(c.radius));
+        (c.inputOnly ? inputOnly : combined) += roundedRegion(innerRect(c.rect), qRound(c.radius));
     }
     /* A card mid-slide is partly past the surface edge; nothing outside the
        surface can be blurred, so do not describe it. */
     combined &= surfaceRect;
+    inputOnly &= surfaceRect;
     const QRegion &effectRegion = combined;
     if (combined.isEmpty()) {
         /* Every panel is past the surface edge — the last frames of a card
@@ -556,8 +565,8 @@ void Surface::recompute(QQuickWindow *window)
                combined.boundingRect().x(), combined.boundingRect().y(),
                combined.boundingRect().width(), combined.boundingRect().height(),
                window->width(), window->height());
-        /* Grown slightly so the rounded corners stay comfortably clickable. */
-        const QRegion mask = combined.boundingRect().isEmpty() ? QRegion() : combined;
+        /* The panels exactly, plus any input-only controls (setInputRegion). */
+        const QRegion mask = combined.boundingRect().isEmpty() ? QRegion() : combined + inputOnly;
         if (mask != m_lastMask.value(window)) {
             m_lastMask[window] = mask;
             window->setMask(mask);

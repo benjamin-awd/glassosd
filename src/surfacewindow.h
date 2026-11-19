@@ -86,6 +86,14 @@ public:
                                     const QRectF &rect, qreal radius);
     Q_INVOKABLE void clearPanelRegion(QQuickWindow *window, QObject *panel);
 
+    /* Like setPanelRegion, but for input only: the rect joins the input mask
+       and is not blurred. For controls drawn outside any panel, such as the
+       notification card's close button, which straddles the card's corner
+       and was half unclickable because input followed the card exactly.
+       Cleared with clearPanelRegion. */
+    Q_INVOKABLE void setInputRegion(QQuickWindow *window, QObject *panel,
+                                    const QRectF &rect, qreal radius);
+
     /* Restrict input to the registered panel rects.
 
        A layer surface receives clicks across its whole extent, and the
@@ -177,9 +185,11 @@ private:
     struct Contribution {
         QRectF rect;
         qreal radius = 0;
+        bool inputOnly = false;
     };
     QHash<QQuickWindow *, QHash<QObject *, Contribution>> m_regions;
     QSet<QQuickWindow *> m_maskedWindows;
+    bool m_registeringInputOnly = false;   // set across setInputRegion()'s call
     QHash<QQuickWindow *, QRegion> m_lastMask;
     /* What the compositor was last given, so an unchanged region is not sent
        again. Each KWindowEffects call replaces the window's blur object

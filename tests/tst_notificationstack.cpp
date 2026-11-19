@@ -457,6 +457,31 @@ private Q_SLOTS:
         QCOMPARE(m_model->rowCount(), 1);
     }
 
+    /* The close button straddles the card's top-left corner. Its outer half
+       was outside the input region, and it hid as soon as the pointer left
+       the card for that half. */
+    void closeButtonStaysReachableOffTheCardEdge()
+    {
+        singleton("Appearance")->setProperty("notifyHeader", QStringList{QStringLiteral("icon"), QStringLiteral("time"), QStringLiteral("close")});
+        m_model->insert(note(QStringLiteral("closable")));
+        QTRY_COMPARE(cards().size(), 1);
+        waitSettled();
+        const QRectF r = drawn(cards().constFirst());
+        QObject *surface = singleton("Surface");
+        QTest::mouseMove(m_win, (r.center()).toPoint());
+        QTRY_COMPARE(surface->property("inputHolders").toList().size(), 1);
+        /* Across the button's inner half to its outer half: up and left of
+           the card's corner, on the button and off the card. */
+        QTest::mouseMove(m_win, (r.topLeft() + QPointF(3, 3)).toPoint());
+        QTest::qWait(20);
+        QTest::mouseMove(m_win, (r.topLeft() - QPointF(5, 5)).toPoint());
+        QTest::qWait(400);   // past the grace period: its own hover holds it now
+        QCOMPARE(surface->property("inputHolders").toList().size(), 1);
+        QTest::mouseClick(m_win, Qt::LeftButton, Qt::NoModifier, (r.topLeft() - QPointF(5, 5)).toPoint());
+        QTRY_COMPARE_WITH_TIMEOUT(m_model->rowCount(), 0, 2000);
+        QTRY_COMPARE(surface->property("inputHolders").toList().size(), 0);
+    }
+
     /* e099271: a settings change re-sends the position. With a sliding theme
        the right margin is folded into the layout, and passing it to the
        layer shell as well pushed the surface inward on every change. */

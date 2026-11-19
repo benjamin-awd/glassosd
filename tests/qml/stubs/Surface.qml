@@ -24,7 +24,13 @@ QtObject {
         regionCalls++
         if (holders.indexOf(p) < 0) holders.push(p)
     }
+    property var inputHolders: []
+    function setInputRegion(w, p, r, rad) {
+        if (inputHolders.indexOf(p) < 0) inputHolders.push(p)
+    }
     function clearPanelRegion(w, p) {
+        const k = inputHolders.indexOf(p)
+        if (k >= 0) inputHolders.splice(k, 1)
         const i = holders.indexOf(p)
         if (i >= 0) holders.splice(i, 1)
     }

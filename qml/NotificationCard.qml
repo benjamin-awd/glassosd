@@ -210,6 +210,7 @@ Item {
         if (!w)
             return
         Surface.clearPanelRegion(w, card)
+        Surface.clearPanelRegion(w, closeButton)
         for (let i = 0; i < sheets.count; ++i) {
             const s = sheets.itemAt(i)
             if (s) Surface.clearPanelRegion(w, s)
@@ -765,7 +766,11 @@ Item {
                while the menu is open: reaching a row can take the pointer
                off the card, and a card that expired mid-menu would take the
                menu with it. */
-            onContainsMouseChanged: root.hoverChanged(containsMouse || cardMenu.open)
+            onContainsMouseChanged: {
+                root.hoverChanged(containsMouse || cardMenu.open)
+                if (!containsMouse)
+                    closeGrace.restart()
+            }
             onClicked: (mouse) => {
                 /* Right-click opens the card's own menu. Snooze and settings
                    used to sit on the card permanently, which is a lot of
@@ -1197,20 +1202,50 @@ Item {
                 }
             }
         }
+    }
 
-        /* macOS puts the dismiss control on the top-left corner, overlapping
-           the card edge, and only once the pointer has arrived. There is room
-           to overlap because the window is shadowPad larger than the card on
-           every side. Hiding it strands nothing: clicking the card, middle-
-           clicking and swiping all still dismiss. */
-        CardButton {
-            icon: "close"
-            visible: Appearance.notifyHeader.includes("close")
-                     && cardHover.containsMouse
-            anchors.horizontalCenter: parent.left
-            anchors.verticalCenter: parent.top
-            z: 3
-            onActivated: root.dismissed()
+    /* macOS puts the dismiss control on the top-left corner, overlapping
+       the card edge, and only once the pointer has arrived. There is room
+       to overlap because the window is shadowPad larger than the card on
+       every side. Hiding it strands nothing: clicking the card, middle-
+       clicking and swiping all still dismiss. */
+    /* Two things kept half of it out of reach. Input followed the card
+       exactly, so the half hanging off the corner was not in the input
+       region and a click there went to the window behind. And it was
+       shown only while the card was hovered, so moving the pointer onto
+       that half hid it. It now registers its own input-only region
+       while shown (not blurred), and its own hover keeps it up.
+
+       A child of the delegate, not of the card: the card carries a layer
+       effect for its shadow, and Qt delivers no pointer events to a layered
+       item's children outside its bounds, so the outer half could never be
+       hovered or clicked whatever the input region said. */
+    /* A moment's grace after the pointer leaves the card, so a quick
+       move onto the overhanging half finds the button still there. */
+    Timer {
+        id: closeGrace
+        interval: 250
+    }
+    CardButton {
+        id: closeButton
+        icon: "close"
+        visible: Appearance.notifyHeader.includes("close")
+                 && !root.leaving
+                 && (cardHover.containsMouse || hovered || closeGrace.running)
+        anchors.horizontalCenter: card.left
+        anchors.verticalCenter: card.top
+        z: 3
+        onActivated: root.dismissed()
+        onVisibleChanged: {
+            const w = Window.window
+            if (!w)
+                return
+            if (visible) {
+                const p = mapToItem(null, 0, 0)
+                Surface.setInputRegion(w, closeButton, Qt.rect(p.x, p.y, width, height), width / 2)
+            } else {
+                Surface.clearPanelRegion(w, closeButton)
+            }
         }
     }
 }

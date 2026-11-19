@@ -11,6 +11,7 @@ import org.glassosd.ui
 Rectangle {
     id: root
     property string icon: ""
+    readonly property alias hovered: hover.containsMouse
     signal activated()
 
     implicitWidth: 24
