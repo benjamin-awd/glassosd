@@ -617,7 +617,12 @@ Window {
                         Layout.fillHeight: true
                         clip: true
                         spacing: 6
-                        model: HistoryModel
+                        /* Detached while the centre is shut. HistoryModel resets on
+                           every notification, and a list still bound to it rebuilt
+                           its delegates (icons and all) on the frame each new card
+                           began to arrive, for a window nobody could see. The
+                           settle timer above re-jumps once the rows are back. */
+                        model: HistoryModel.panelOpen ? HistoryModel : null
 
                         /* A list in a desktop panel, not a page on a phone: running
                            off the end and springing back reads as the list refusing

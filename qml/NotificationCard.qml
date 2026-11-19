@@ -1361,12 +1361,18 @@ Item {
 
     Repeater {
         id: memberCards
-        model: root.groupMembers
+        /* A count, not the array: a fresh array from groupMembers() (on every
+           history change, from any app, or a keystroke in the centre's
+           search) made the Repeater destroy and rebuild every member card,
+           shadows and all, which flickered. With a count the cards stay and
+           only their entry rebinds; they are rebuilt only when the number
+           of members changes. */
+        model: root.groupMembers.length
 
         MemberCard {
             id: member
-            required property var modelData
             required property int index
+            readonly property var modelData: root.groupMembers[index] || ({})
             entry: modelData
             z: -2
 

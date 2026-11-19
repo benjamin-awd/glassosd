@@ -22,6 +22,8 @@
 #include <QQmlEngine>
 #include <QTimer>
 
+#include <functional>
+
 class QProcess;
 
 class SystemControls : public QObject
@@ -60,7 +62,24 @@ Q_SIGNALS:
     void changed();
 
 private:
-    QString run(const QString &cmd) const;
+    /* Every command runs asynchronously: the UI thread used to wait on
+       wpctl and brightnessctl (about 14 ms a refresh, every 1.5 s while the
+       centre was open, and 6 ms per volume slider step), dropping frames as
+       the centre scrolled. The callback gets stdout, or an empty string if
+       the command failed or ran past 400 ms. */
+    void runAsync(const QString &cmd, std::function<void(const QString &)> done);
+    void finishRefresh();
+    /* Slider moves while a set is still running are coalesced: only the
+       latest value is sent when it finishes. */
+    void sendVolume();
+    void sendBrightness();
+    bool m_refreshing = false;
+    bool m_refreshAgain = false;
+    int m_refreshPending = 0;
+    qreal m_oldVol = 0, m_oldBri = 0;
+    bool m_oldMuted = false, m_oldVolAvail = false, m_oldBriAvail = false;
+    int m_volumeTarget = -1, m_brightnessTarget = -1;
+    bool m_volumeSending = false, m_brightnessSending = false;
     void detect();
     void startSubscription();
 

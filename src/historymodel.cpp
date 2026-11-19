@@ -67,6 +67,7 @@ void HistoryModel::setCapacity(int n)
         m_all.removeLast();
     }
     rebuild();
+    m_saveTimer.start();   // the entries changed; see rebuild()
 }
 
 void HistoryModel::load()
@@ -376,6 +377,7 @@ void HistoryModel::record(const Notification &n)
         if (m_all.at(i).id == n.id && m_all.at(i).appName == n.appName) {
             m_all[i] = n;
             rebuild();
+            m_saveTimer.start();   // the entries changed; see rebuild()
             return;
         }
     }
@@ -416,6 +418,7 @@ void HistoryModel::record(const Notification &n)
             m_all.removeAt(i);
             m_all.prepend(merged);
             rebuild();
+            m_saveTimer.start();   // the entries changed; see rebuild()
             return;
         }
     }
@@ -425,6 +428,7 @@ void HistoryModel::record(const Notification &n)
         m_all.removeLast();
     }
     rebuild();
+    m_saveTimer.start();   // the entries changed; see rebuild()
 }
 
 ImageData HistoryModel::imageFor(uint id) const
@@ -663,7 +667,10 @@ void HistoryModel::rebuild()
 
     endResetModel();
     Q_EMIT changed();
-    m_saveTimer.start();
+    /* Not saved from here: rebuild() also runs for a search keystroke, a
+       filter, a collapse or the centre opening, none of which changes what
+       is on disk, and each rewrote history.json. The paths that change the
+       entries start the save timer themselves. */
 }
 
 bool HistoryModel::isCollapsed(const QString &key, const QString &appName, int count) const
@@ -762,6 +769,7 @@ void HistoryModel::clearGroup(const QString &key)
     m_collapsed.remove(key);
     m_expanded.remove(key);
     rebuild();
+    m_saveTimer.start();   // the entries changed; see rebuild()
 }
 
 void HistoryModel::removeAt(int row)
@@ -774,6 +782,7 @@ void HistoryModel::removeAt(int row)
         return n.id == id;
     });
     rebuild();
+    m_saveTimer.start();   // the entries changed; see rebuild()
 }
 
 void HistoryModel::clearAll()
@@ -788,4 +797,5 @@ void HistoryModel::clearAll()
         });
     }
     rebuild();
+    m_saveTimer.start();   // the entries changed; see rebuild()
 }

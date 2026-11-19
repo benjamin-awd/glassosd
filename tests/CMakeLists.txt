@@ -65,6 +65,10 @@ glassosd_test(tst_notificationserver
 glassosd_test(tst_snoozestore
     SOURCES snoozestore.cpp)
 
+glassosd_test(tst_systemcontrols
+    SOURCES systemcontrols.cpp
+    LIBS Qt6::Qml)
+
 glassosd_test(tst_theme
     SOURCES theme.cpp colorscheme.cpp
     LIBS Qt6::Qml Qt6::DBus KF6::ConfigCore)

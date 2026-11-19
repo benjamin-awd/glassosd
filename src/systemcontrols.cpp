@@ -51,17 +51,35 @@ void SystemControls::detect()
     }
 }
 
-QString SystemControls::run(const QString &cmd) const
+void SystemControls::runAsync(const QString &cmd, std::function<void(const QString &)> done)
 {
-    QProcess p;
-    p.start(QStringLiteral("/bin/sh"), {QStringLiteral("-c"), cmd});
-    /* Short: these are local queries. A hung audio server must not freeze the
-       UI thread, and a stale reading for one tick is harmless. */
-    if (!p.waitForFinished(400)) {
-        p.kill();
-        return {};
-    }
-    return QString::fromUtf8(p.readAllStandardOutput()).trimmed();
+    auto *p = new QProcess(this);
+    auto finished = std::make_shared<bool>(false);
+    auto complete = [p, done, finished](const QString &out) {
+        if (*finished) {
+            return;
+        }
+        *finished = true;
+        p->deleteLater();
+        done(out);
+    };
+    connect(p, &QProcess::finished, this, [p, complete](int code, QProcess::ExitStatus status) {
+        complete(status == QProcess::NormalExit && code == 0
+                     ? QString::fromUtf8(p->readAllStandardOutput()).trimmed()
+                     : QString());
+    });
+    connect(p, &QProcess::errorOccurred, this, [complete](QProcess::ProcessError e) {
+        if (e == QProcess::FailedToStart) {
+            complete(QString());
+        }
+    });
+    /* Short: these are local queries. A hung audio server must not leave a
+       reading pending forever; a stale value for one tick is harmless. */
+    QTimer::singleShot(400, p, [p, complete] {
+        p->kill();
+        complete(QString());
+    });
+    p->start(QStringLiteral("/bin/sh"), {QStringLiteral("-c"), cmd});
 }
 
 void SystemControls::startSubscription()
@@ -72,8 +90,11 @@ void SystemControls::startSubscription()
     m_subscription = new QProcess(this);
     connect(m_subscription, &QProcess::readyReadStandardOutput, this, [this] {
         const QByteArray out = m_subscription->readAllStandardOutput();
-        /* Sink events cover volume and mute; source events cover the mic. */
-        if (out.contains("on sink") || out.contains("on source")) {
+        /* Sink events cover volume and mute; source events cover the mic.
+           With the '#': "on sink-input #" (any app's stream starting,
+           stopping or changing level) matched "on sink" too and refreshed
+           on every one. */
+        if (out.contains("on sink #") || out.contains("on source #")) {
             m_debounce.start();
         }
     });
@@ -89,68 +110,99 @@ void SystemControls::setPolling(bool on)
     } else {
         m_poll.stop();
         if (m_subscription) {
-            m_subscription->terminate();
-            if (!m_subscription->waitForFinished(200)) {
-                m_subscription->kill();
-            }
-            delete m_subscription;
+            /* Not waited for: the centre closing must not stall on it. */
+            QProcess *sub = m_subscription;
             m_subscription = nullptr;
+            sub->disconnect(this);
+            connect(sub, &QProcess::finished, sub, &QObject::deleteLater);
+            sub->kill();
         }
     }
 }
 
 void SystemControls::refresh()
 {
-    const qreal oldVol = m_volume;
-    const qreal oldBri = m_brightness;
-    const bool oldMuted = m_muted;
-    const bool oldVolAvail = m_volumeAvailable;
-    const bool oldBriAvail = m_brightnessAvailable;
+    if (m_refreshing) {
+        m_refreshAgain = true;   // one more once this finishes, not one per call
+        return;
+    }
+    m_refreshing = true;
+    m_oldVol = m_volume;
+    m_oldBri = m_brightness;
+    m_oldMuted = m_muted;
+    m_oldVolAvail = m_volumeAvailable;
+    m_oldBriAvail = m_brightnessAvailable;
+    m_refreshPending = 0;
 
     if (m_volumeTool == QLatin1String("wpctl")) {
+        ++m_refreshPending;
         // "Volume: 0.35" or "Volume: 0.35 [MUTED]"
-        const QString out = run(QStringLiteral("wpctl get-volume @DEFAULT_AUDIO_SINK@"));
-        static const QRegularExpression re(QStringLiteral("Volume:\\s*([0-9.]+)"));
-        const auto m = re.match(out);
-        if (m.hasMatch()) {
-            m_volume = qBound(0.0, m.captured(1).toDouble(), 1.0);
-            m_muted = out.contains(QLatin1String("MUTED"));
-            m_volumeAvailable = true;
-        } else {
-            m_volumeAvailable = false;
-        }
+        runAsync(QStringLiteral("wpctl get-volume @DEFAULT_AUDIO_SINK@"), [this](const QString &out) {
+            static const QRegularExpression re(QStringLiteral("Volume:\\s*([0-9.]+)"));
+            const auto m = re.match(out);
+            if (m.hasMatch()) {
+                m_volume = qBound(0.0, m.captured(1).toDouble(), 1.0);
+                m_muted = out.contains(QLatin1String("MUTED"));
+                m_volumeAvailable = true;
+            } else {
+                m_volumeAvailable = false;
+            }
+            finishRefresh();
+        });
     } else if (m_volumeTool == QLatin1String("pactl")) {
-        const QString out = run(QStringLiteral("pactl get-sink-volume @DEFAULT_SINK@"));
-        static const QRegularExpression re(QStringLiteral("(\\d+)%"));
-        const auto m = re.match(out);
-        if (m.hasMatch()) {
-            m_volume = qBound(0.0, m.captured(1).toDouble() / 100.0, 1.0);
-            m_muted = run(QStringLiteral("pactl get-sink-mute @DEFAULT_SINK@"))
-                          .contains(QLatin1String("yes"));
-            m_volumeAvailable = true;
-        } else {
-            m_volumeAvailable = false;
-        }
+        ++m_refreshPending;
+        runAsync(QStringLiteral("pactl get-sink-volume @DEFAULT_SINK@; echo; pactl get-sink-mute @DEFAULT_SINK@"),
+                 [this](const QString &out) {
+            static const QRegularExpression re(QStringLiteral("(\\d+)%"));
+            const auto m = re.match(out);
+            if (m.hasMatch()) {
+                m_volume = qBound(0.0, m.captured(1).toDouble() / 100.0, 1.0);
+                m_muted = out.contains(QLatin1String("Mute: yes"));
+                m_volumeAvailable = true;
+            } else {
+                m_volumeAvailable = false;
+            }
+            finishRefresh();
+        });
     }
 
     if (!m_brightnessTool.isEmpty()) {
-        const QString cur = run(QStringLiteral("brightnessctl -m g"));
-        const QString max = run(QStringLiteral("brightnessctl -m m"));
-        bool okc = false, okm = false;
-        const double c = cur.toDouble(&okc);
-        const double mx = max.toDouble(&okm);
-        if (okc && okm && mx > 0) {
-            m_brightness = qBound(0.0, c / mx, 1.0);
-            m_brightnessAvailable = true;
-        } else {
-            m_brightnessAvailable = false;
-        }
+        ++m_refreshPending;
+        /* One call: -m prints device,class,current,percent,max. */
+        runAsync(QStringLiteral("brightnessctl -m"), [this](const QString &out) {
+            const QStringList f = out.section(QLatin1Char('\n'), 0, 0).split(QLatin1Char(','));
+            bool okc = false, okm = false;
+            const double c = f.value(2).toDouble(&okc);
+            const double mx = f.value(4).toDouble(&okm);
+            if (okc && okm && mx > 0) {
+                m_brightness = qBound(0.0, c / mx, 1.0);
+                m_brightnessAvailable = true;
+            } else {
+                m_brightnessAvailable = false;
+            }
+            finishRefresh();
+        });
     }
 
-    if (!qFuzzyCompare(oldVol + 1, m_volume + 1) || !qFuzzyCompare(oldBri + 1, m_brightness + 1)
-        || oldMuted != m_muted || oldVolAvail != m_volumeAvailable
-        || oldBriAvail != m_brightnessAvailable) {
+    if (m_refreshPending == 0) {
+        m_refreshing = false;
+    }
+}
+
+void SystemControls::finishRefresh()
+{
+    if (--m_refreshPending > 0) {
+        return;
+    }
+    m_refreshing = false;
+    if (!qFuzzyCompare(m_oldVol + 1, m_volume + 1) || !qFuzzyCompare(m_oldBri + 1, m_brightness + 1)
+        || m_oldMuted != m_muted || m_oldVolAvail != m_volumeAvailable
+        || m_oldBriAvail != m_brightnessAvailable) {
         Q_EMIT changed();
+    }
+    if (m_refreshAgain) {
+        m_refreshAgain = false;
+        refresh();
     }
 }
 
@@ -159,14 +211,27 @@ void SystemControls::setVolume(qreal v)
     if (m_volumeTool.isEmpty()) {
         return;
     }
-    const int pct = qBound(0, int(v * 100 + 0.5), 100);
-    if (m_volumeTool == QLatin1String("wpctl")) {
-        run(QStringLiteral("wpctl set-volume @DEFAULT_AUDIO_SINK@ %1%").arg(pct));
-    } else {
-        run(QStringLiteral("pactl set-sink-volume @DEFAULT_SINK@ %1%").arg(pct));
-    }
-    m_volume = pct / 100.0;
+    m_volumeTarget = qBound(0, int(v * 100 + 0.5), 100);
+    m_volume = m_volumeTarget / 100.0;
     Q_EMIT changed();
+    sendVolume();
+}
+
+void SystemControls::sendVolume()
+{
+    if (m_volumeSending || m_volumeTarget < 0) {
+        return;
+    }
+    const int pct = m_volumeTarget;
+    m_volumeTarget = -1;
+    m_volumeSending = true;
+    const QString cmd = m_volumeTool == QLatin1String("wpctl")
+        ? QStringLiteral("wpctl set-volume @DEFAULT_AUDIO_SINK@ %1%").arg(pct)
+        : QStringLiteral("pactl set-sink-volume @DEFAULT_SINK@ %1%").arg(pct);
+    runAsync(cmd, [this](const QString &) {
+        m_volumeSending = false;
+        sendVolume();   // the latest value a drag reached while this ran
+    });
 }
 
 void SystemControls::toggleMute()
@@ -174,12 +239,10 @@ void SystemControls::toggleMute()
     if (m_volumeTool.isEmpty()) {
         return;
     }
-    if (m_volumeTool == QLatin1String("wpctl")) {
-        run(QStringLiteral("wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"));
-    } else {
-        run(QStringLiteral("pactl set-sink-mute @DEFAULT_SINK@ toggle"));
-    }
-    refresh();
+    const QString cmd = m_volumeTool == QLatin1String("wpctl")
+        ? QStringLiteral("wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle")
+        : QStringLiteral("pactl set-sink-mute @DEFAULT_SINK@ toggle");
+    runAsync(cmd, [this](const QString &) { refresh(); });
 }
 
 void SystemControls::setBrightness(qreal v)
@@ -189,8 +252,22 @@ void SystemControls::setBrightness(qreal v)
     }
     /* Never let a slider drag take the screen to literal zero — on most
        panels that is indistinguishable from the machine having died. */
-    const int pct = qBound(1, int(v * 100 + 0.5), 100);
-    run(QStringLiteral("brightnessctl -q set %1%").arg(pct));
-    m_brightness = pct / 100.0;
+    m_brightnessTarget = qBound(1, int(v * 100 + 0.5), 100);
+    m_brightness = m_brightnessTarget / 100.0;
     Q_EMIT changed();
+    sendBrightness();
+}
+
+void SystemControls::sendBrightness()
+{
+    if (m_brightnessSending || m_brightnessTarget < 0) {
+        return;
+    }
+    const int pct = m_brightnessTarget;
+    m_brightnessTarget = -1;
+    m_brightnessSending = true;
+    runAsync(QStringLiteral("brightnessctl -q set %1%").arg(pct), [this](const QString &) {
+        m_brightnessSending = false;
+        sendBrightness();
+    });
 }
