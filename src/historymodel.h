@@ -173,6 +173,7 @@ private:
     /* appName, not groupKey: the rules engine matches on appname, and the
        settings panel writes the rule under the app's name. */
     bool isCollapsed(const QString &key, const QString &appName, int count) const;
+    void setGroupFolded(const QString &key, bool fold);
     /* What an entry shows for summary, body or icon: masked while the
        screen is shared, as its lock-screen preference asks. An invalid
        QVariant means "not masked, use the real value". */

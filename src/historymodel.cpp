@@ -757,11 +757,22 @@ QVariantMap HistoryModel::rowInfo(int row) const
 
 void HistoryModel::toggleGroup(const QString &key)
 {
-    int count = 0;
+    /* Flip what the header shows. Working the state out again here used
+       the header's count, which is occurrences (repeats included), while
+       rebuild() decides on rows: a group of two rows standing for three
+       arrivals showed open, read as folded here, and took a second press. */
     for (const Row &r : std::as_const(m_rows)) {
         if (r.header && r.groupKey == key) {
-            count = r.count;
-            break;
+            setGroupFolded(key, !r.collapsed);
+            return;
+        }
+    }
+    /* No header on screen (filtered out, or a group of one): the rows
+       rebuild() would count. */
+    int count = 0;
+    for (const Notification &n : std::as_const(m_all)) {
+        if (n.groupKey() == key) {
+            ++count;
         }
     }
     /* The group key is the desktop entry where there is one, so it is not
@@ -773,12 +784,17 @@ void HistoryModel::toggleGroup(const QString &key)
             break;
         }
     }
-    if (isCollapsed(key, appName, count)) {
-        m_expanded.insert(key);
-        m_collapsed.remove(key);
-    } else {
+    setGroupFolded(key, !isCollapsed(key, appName, count));
+}
+
+void HistoryModel::setGroupFolded(const QString &key, bool fold)
+{
+    if (fold) {
         m_collapsed.insert(key);
         m_expanded.remove(key);
+    } else {
+        m_expanded.insert(key);
+        m_collapsed.remove(key);
     }
     rebuild();
 }

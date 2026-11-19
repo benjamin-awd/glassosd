@@ -208,6 +208,26 @@ private Q_SLOTS:
         QCOMPARE(h.index(1).data(HistoryModel::RepeatCountRole).toInt(), 3);
     }
 
+    /* One toggle folds a group, whatever its repeats. toggleGroup worked
+       out the current state from the header's occurrence count while the
+       rows were built from the row count, so a group of two rows standing
+       for three arrivals (one a repeat) looked open, toggled to "open", and
+       took a second press to fold. */
+    void oneToggleFoldsAGroupWithRepeats()
+    {
+        clearStore();
+        HistoryModel h;
+        h.setAutoCollapseOver(2);
+        h.record(note(QStringLiteral("Mail"), QStringLiteral("one")));
+        h.record(note(QStringLiteral("Mail"), QStringLiteral("two")));
+        h.record(note(QStringLiteral("Mail"), QStringLiteral("two")));   // a repeat
+        QCOMPARE(h.rowCount(), 3);   // header, two rows
+        QVERIFY(!h.rowInfo(0).value(QStringLiteral("collapsed")).toBool());
+        h.toggleGroup(h.rowInfo(0).value(QStringLiteral("groupKey")).toString());
+        QVERIFY(h.rowInfo(0).value(QStringLiteral("collapsed")).toBool());
+        QVERIFY(h.rowCount() < 3);
+    }
+
     /* The rest of a popup's group, for opening it on the card: newest
        first, the card's own entry left out, capped, other apps ignored. */
     void groupMembersListsTheRestOfTheGroup()
