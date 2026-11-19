@@ -680,6 +680,31 @@ private Q_SLOTS:
                  "the top card's fill faded in as the group opened");
     }
 
+    /* A different message taking the card starts folded: the last one's
+       opened body carried over, so it opened at 20 lines. */
+    void aNewMessageOnTheCardStartsFolded()
+    {
+        const QString longBody = QStringLiteral("word ").repeated(200);
+        Notification first = note(QStringLiteral("first"));
+        first.body = longBody;
+        first.stackTag = QStringLiteral("t");
+        first.appName = QStringLiteral("Tagged");
+        m_model->insert(first);
+        QTRY_COMPARE(cards().size(), 1);
+        waitSettled();
+        QQuickItem *card = cards().constFirst();
+        QMetaObject::invokeMethod(card, "setExpanded", Q_ARG(QVariant, true));
+        QVERIFY(card->property("expanded").toBool());
+        Notification next = note(QStringLiteral("next"));
+        next.body = longBody;
+        next.stackTag = QStringLiteral("t");
+        next.appName = QStringLiteral("Tagged");
+        m_model->insert(next);   // a new id onto the same card
+        QTRY_COMPARE(card->property("shownId").toUInt(), next.id);
+        QVERIFY2(!card->property("expanded").toBool(), "the new message opened expanded");
+        QVERIFY(!card->property("textOpen").toBool());
+    }
+
     /* An open group that falls to one card forgets it was open. The flag
        stayed set, and the app's next burst, coalescing into the same card,
        sprang open with nobody clicking. */

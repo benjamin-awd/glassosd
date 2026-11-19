@@ -608,7 +608,20 @@ Item {
     /* The row can change id in place (coalescing, a stack tag). The hold
        is sent by id, so say it again for the new one. */
     readonly property var shownId: entry ? entry.notifId : 0
-    onShownIdChanged: if (wantHold) root.hoverChanged(true)
+    onShownIdChanged: {
+        if (wantHold)
+            root.hoverChanged(true)
+        /* A different message now (coalescing, a stack tag, the next of a
+           group taking the card): it starts folded. The last one's open body
+           carried over, so the new text opened at 20 lines, and folding it
+           ran to the old message's height and then snapped. */
+        if (expanded || textOpen || bodyMoving) {
+            bodyAnim.stop()
+            bodyMoving = false
+            expanded = false
+            textOpen = false
+        }
+    }
     onPointerOnCardChanged: if (!pointerOnCard) closeGrace.restart()
 
     readonly property real closedHeight: card.implicitHeight

@@ -45,11 +45,7 @@ NotificationModel::NotificationModel(QObject *parent)
     m_tick.setInterval(kTickMs);
     connect(&m_tick, &QTimer::timeout, this, &NotificationModel::expireTick);
     m_ageTick.setInterval(30000);
-    connect(&m_ageTick, &QTimer::timeout, this, [this] {
-        if (!m_displayed.isEmpty()) {
-            Q_EMIT dataChanged(index(0), index(m_displayed.size() - 1), {WhenRole});
-        }
-    });
+    connect(&m_ageTick, &QTimer::timeout, this, &NotificationModel::ageTick);
 
     /* Every way the live count can move goes through one of these: rows
        arriving or leaving, or a row being marked closing. */
@@ -630,6 +626,24 @@ uint NotificationModel::ownerOf(uint id) const
         }
     }
     return 0;
+}
+
+void NotificationModel::ageTick()
+{
+    if (m_displayed.isEmpty()) {
+        return;
+    }
+    /* The members too: each carries its own "when", and an open group's
+       member cards read it from there. With WhenRole alone they stayed at
+       the age they had when the group opened, however long it was held. */
+    QList<int> roles{WhenRole};
+    for (const Notification &n : std::as_const(m_displayed)) {
+        if (m_members.contains(n.id)) {
+            roles << MembersRole;
+            break;
+        }
+    }
+    Q_EMIT dataChanged(index(0), index(m_displayed.size() - 1), roles);
 }
 
 void NotificationModel::groupChanged(uint ownerId)

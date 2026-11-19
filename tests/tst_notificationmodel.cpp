@@ -417,6 +417,34 @@ private Q_SLOTS:
         QVERIFY(m.isLive(706));
     }
 
+    /* The age tick refreshes the members' "when" too, which an open
+       group's member cards read: they stayed at the age they had when the
+       group opened, however long it was held. */
+    void theAgeTickAgesGroupMembers()
+    {
+        FakeClock clock;
+        NotificationModel m;
+        clock.install(m);
+        m.setCoalesce(3, 20000);
+        m.setTimeouts(0, 0, 0);
+        for (uint id = 901; id <= 903; ++id) {
+            m.insert(note(QStringLiteral("Chat"), QStringLiteral("c%1").arg(id), {}, id));
+        }
+        auto memberWhen = [&m] {
+            return m.index(0).data(NotificationModel::MembersRole).toList().first().toMap()
+                .value(QStringLiteral("when")).toString();
+        };
+        QCOMPARE(memberWhen(), QStringLiteral("now"));
+        QSignalSpy changed(&m, &QAbstractItemModel::dataChanged);
+        clock.t = clock.t.addSecs(120);
+        m.ageTickForTesting();
+        QCOMPARE(changed.size(), 1);
+        const auto roles = changed.first().at(2).value<QList<int>>();
+        QVERIFY(roles.contains(NotificationModel::WhenRole));
+        QVERIFY2(roles.contains(NotificationModel::MembersRole), "members' ages were not refreshed");
+        QVERIFY(memberWhen() != QStringLiteral("now"));
+    }
+
     /* A card that stays up is told the time has moved on. */
     void theAgeTickRunsWhileCardsAreShown()
     {

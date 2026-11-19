@@ -154,6 +154,7 @@ public:
     void expireForTesting() { expireTick(); }
     bool tickActiveForTesting() const { return m_tick.isActive(); }
     bool ageTickActiveForTesting() const { return m_ageTick.isActive(); }
+    void ageTickForTesting() { ageTick(); }
 
     /* Put this one away and let it come back later. The notification itself
        is handed out rather than kept: persistence belongs to SnoozeStore, and
@@ -310,6 +311,7 @@ private:
     void retireRow(uint id);
     /* A group follows its top card to a new id. */
     void moveMembers(uint from, uint to);
+    void ageTick();
 
     int m_limit = 4;
     int m_timeoutLow = 4000;
