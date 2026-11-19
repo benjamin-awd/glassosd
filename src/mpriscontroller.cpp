@@ -11,8 +11,12 @@
 #include <QDBusMessage>
 #include <QDBusArgument>
 #include <QDBusReply>
+#include <QDBusPendingCallWatcher>
+#include <QDBusPendingReply>
 #include <QDBusVariant>
 #include <QStringList>
+
+#include <memory>
 
 namespace
 {
@@ -21,48 +25,67 @@ constexpr const char *kPlayerIface = "org.mpris.MediaPlayer2.Player";
 constexpr const char *kRootIface = "org.mpris.MediaPlayer2";
 constexpr const char *kPrefix = "org.mpris.MediaPlayer2.";
 
-/* QDBusInterface::property() cannot read a{sv} without the type being
-   registered, and fails with "QDBusRawType ... must be registered". Going
-   through Properties.Get and demarshalling by hand avoids the registration
-   dance entirely. */
-QVariant readProperty(const QString &service, const QString &iface, const QString &name)
+/* Properties.GetAll / Get, asynchronously. Everything here used to be a
+   blocking call with a 500 ms timeout on the GUI thread, three or four per
+   refresh, and a refresh ran on every PropertiesChanged from any sender on
+   /org/mpris/MediaPlayer2: a hung player (a frozen browser tab) stalled
+   animations and Notify replies for seconds at a time. */
+QDBusPendingCall propertiesCall(const QString &service, const QString &method,
+                                const QString &iface, const QString &name = {})
 {
     QDBusMessage msg = QDBusMessage::createMethodCall(service, QLatin1String(kPath),
                                                       QStringLiteral("org.freedesktop.DBus.Properties"),
-                                                      QStringLiteral("Get"));
-    msg << iface << name;
-    const QDBusMessage reply = QDBusConnection::sessionBus().call(msg, QDBus::Block, 500);
-    if (reply.type() != QDBusMessage::ReplyMessage || reply.arguments().isEmpty()) {
-        return {};
+                                                      method);
+    if (name.isEmpty()) {
+        msg << iface;
+    } else {
+        msg << iface << name;
     }
-    QVariant v = reply.arguments().first();
+    return QDBusConnection::sessionBus().asyncCall(msg, 2000);
+}
+
+/* A variant off the bus, unwrapped from its QDBusVariant. */
+QVariant unwrap(QVariant v)
+{
     if (v.canConvert<QDBusVariant>()) {
         v = v.value<QDBusVariant>().variant();
     }
     return v;
 }
 
-QVariantMap readMetadata(const QString &service)
+/* Reads an a{sv} only if it is one. Streaming a QDBusArgument as a type it
+   does not hold is not an error Qt reports: it asserts inside libdbus, or
+   reads garbage. Any player on the session bus can send a Metadata of the
+   wrong shape (a{ss}, say), which is the same hole db02ce0 closed for
+   image-data. */
+QVariantMap readStringVariantMap(const QVariant &v)
 {
-    const QVariant v = readProperty(service, QLatin1String(kPlayerIface), QStringLiteral("Metadata"));
-    if (v.canConvert<QDBusArgument>()) {
-        QVariantMap out;
-        const QDBusArgument arg = v.value<QDBusArgument>();
-        arg.beginMap();
-        while (!arg.atEnd()) {
-            QString key;
-            QDBusVariant value;
-            arg.beginMapEntry();
-            arg >> key >> value;
-            arg.endMapEntry();
-            out.insert(key, value.variant());
-        }
-        arg.endMap();
-        return out;
+    if (!v.canConvert<QDBusArgument>()) {
+        return v.toMap();
     }
-    return v.toMap();
+    const QDBusArgument arg = v.value<QDBusArgument>();
+    if (arg.currentSignature() != QLatin1String("a{sv}")) {
+        return {};
+    }
+    QVariantMap out;
+    arg.beginMap();
+    while (!arg.atEnd()) {
+        QString key;
+        QDBusVariant value;
+        arg.beginMapEntry();
+        arg >> key >> value;
+        arg.endMapEntry();
+        out.insert(key, value.variant());
+    }
+    arg.endMap();
+    return out;
 }
 } // namespace
+
+QVariantMap MprisController::parseMetadata(const QVariant &value)
+{
+    return readStringVariantMap(unwrap(value));
+}
 
 MprisController::MprisController(QObject *parent)
     : QObject(parent)
@@ -75,39 +98,82 @@ MprisController::MprisController(QObject *parent)
         findPlayer();
     });
 
-    /* Property changes arrive as a standard PropertiesChanged signal. */
+    /* Property changes arrive as a standard PropertiesChanged signal, from
+       any sender on the path. Coalesced: a player that sends a burst of them
+       (position, volume, metadata in turn) costs one round of reads. */
+    m_refreshDebounce.setSingleShot(true);
+    m_refreshDebounce.setInterval(30);
+    connect(&m_refreshDebounce, &QTimer::timeout, this, &MprisController::refresh);
     QDBusConnection::sessionBus().connect(QString(), QLatin1String(kPath),
                                           QStringLiteral("org.freedesktop.DBus.Properties"),
                                           QStringLiteral("PropertiesChanged"),
-                                          this, SLOT(refresh()));
+                                          this, SLOT(scheduleRefresh()));
     findPlayer();
+}
+
+void MprisController::scheduleRefresh()
+{
+    m_refreshDebounce.start();
 }
 
 void MprisController::findPlayer()
 {
-    const QDBusReply<QStringList> reply =
-        QDBusConnection::sessionBus().interface()->registeredServiceNames();
-    QString chosen;
-    if (reply.isValid()) {
-        for (const QString &name : reply.value()) {
-            if (!name.startsWith(QLatin1String(kPrefix))) {
-                continue;
-            }
-            chosen = name;
-            /* Prefer a player that is actually playing over one merely open. */
-            if (readProperty(name, QLatin1String(kPlayerIface),
-                             QStringLiteral("PlaybackStatus")).toString()
-                == QLatin1String("Playing")) {
-                break;
+    const quint64 gen = ++m_findGeneration;
+    auto *namesWatcher = new QDBusPendingCallWatcher(
+        QDBusConnection::sessionBus().interface()->asyncCall(QStringLiteral("ListNames")), this);
+    connect(namesWatcher, &QDBusPendingCallWatcher::finished, this, [this, gen](QDBusPendingCallWatcher *w) {
+        w->deleteLater();
+        if (gen != m_findGeneration) {
+            return;
+        }
+        const QDBusPendingReply<QStringList> reply = *w;
+        QStringList players;
+        if (!reply.isError()) {
+            for (const QString &name : reply.value()) {
+                if (name.startsWith(QLatin1String(kPrefix))) {
+                    players << name;
+                }
             }
         }
-    }
-    m_service = chosen;
-    refresh();
+        if (players.isEmpty()) {
+            m_service.clear();
+            refresh();
+            return;
+        }
+        /* Prefer a player that is actually playing over one merely open:
+           ask them all at once and take the first that says so, or the last
+           listed once every one has answered (the old order). */
+        auto pending = std::make_shared<int>(players.size());
+        auto decided = std::make_shared<bool>(false);
+        const QString fallback = players.last();
+        for (const QString &name : std::as_const(players)) {
+            auto *pw = new QDBusPendingCallWatcher(
+                propertiesCall(name, QStringLiteral("Get"), QLatin1String(kPlayerIface),
+                               QStringLiteral("PlaybackStatus")), this);
+            connect(pw, &QDBusPendingCallWatcher::finished, this,
+                    [this, gen, name, pending, decided, fallback](QDBusPendingCallWatcher *p) {
+                p->deleteLater();
+                --*pending;
+                if (gen != m_findGeneration || *decided) {
+                    return;
+                }
+                const QDBusMessage reply = p->reply();
+                const bool playing = reply.type() == QDBusMessage::ReplyMessage
+                    && !reply.arguments().isEmpty()
+                    && unwrap(reply.arguments().constFirst()).toString() == QLatin1String("Playing");
+                if (playing || *pending == 0) {
+                    *decided = true;
+                    m_service = playing ? name : fallback;
+                    refresh();
+                }
+            });
+        }
+    });
 }
 
 void MprisController::refresh()
 {
+    const quint64 gen = ++m_generation;
     if (m_service.isEmpty()) {
         m_title.clear();
         m_artist.clear();
@@ -118,19 +184,48 @@ void MprisController::refresh()
         return;
     }
 
-    m_playing = readProperty(m_service, QLatin1String(kPlayerIface),
-                             QStringLiteral("PlaybackStatus")).toString()
-        == QLatin1String("Playing");
+    const QString service = m_service;
+    auto *pw = new QDBusPendingCallWatcher(
+        propertiesCall(service, QStringLiteral("GetAll"), QLatin1String(kPlayerIface)), this);
+    connect(pw, &QDBusPendingCallWatcher::finished, this, [this, gen](QDBusPendingCallWatcher *w) {
+        w->deleteLater();
+        if (gen != m_generation) {
+            return;
+        }
+        const QDBusMessage reply = w->reply();
+        QVariantMap props;
+        if (reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty()) {
+            /* GetAll is a{sv} by definition, but from a sender we do not
+               control the signature is checked all the same. */
+            props = readStringVariantMap(reply.arguments().constFirst());
+        }
+        applyPlayerProperties(props);
+    });
 
-    const QVariantMap meta = readMetadata(m_service);
+    auto *iw = new QDBusPendingCallWatcher(
+        propertiesCall(service, QStringLiteral("Get"), QLatin1String(kRootIface),
+                       QStringLiteral("Identity")), this);
+    connect(iw, &QDBusPendingCallWatcher::finished, this, [this, gen](QDBusPendingCallWatcher *w) {
+        w->deleteLater();
+        if (gen != m_generation) {
+            return;
+        }
+        const QDBusMessage reply = w->reply();
+        if (reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty()) {
+            m_identity = unwrap(reply.arguments().constFirst()).toString();
+            Q_EMIT changed();
+        }
+    });
+}
+
+void MprisController::applyPlayerProperties(const QVariantMap &props)
+{
+    m_playing = props.value(QStringLiteral("PlaybackStatus")).toString() == QLatin1String("Playing");
+    const QVariantMap meta = parseMetadata(props.value(QStringLiteral("Metadata")));
     m_title = meta.value(QStringLiteral("xesam:title")).toString();
     /* xesam:artist is a list; join it rather than showing only the first. */
     m_artist = meta.value(QStringLiteral("xesam:artist")).toStringList().join(QStringLiteral(", "));
     m_artUrl = meta.value(QStringLiteral("mpris:artUrl")).toString();
-
-    m_identity = readProperty(m_service, QLatin1String(kRootIface),
-                              QStringLiteral("Identity")).toString();
-
     Q_EMIT changed();
 }
 

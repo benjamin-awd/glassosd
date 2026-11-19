@@ -65,6 +65,10 @@ glassosd_test(tst_notificationserver
 glassosd_test(tst_snoozestore
     SOURCES snoozestore.cpp)
 
+glassosd_test(tst_mpriscontroller
+    SOURCES mpriscontroller.cpp
+    LIBS Qt6::Qml)
+
 # The CLI's list of known keys, checked against the man page.
 add_test(NAME glassosdctl_set_keys
          COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/glassosdctl-set-keys.sh
@@ -83,6 +87,15 @@ if(DBUS_RUN_SESSION)
                      -- ${CMAKE_COMMAND} -E env GLASSOSD_PRIVATE_BUS=1
                      $<TARGET_FILE:tst_portalrelay>)
     set_tests_properties(tst_portalrelay_bus PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        TIMEOUT 60)
+
+    # Fake media players take names on the bus, so the same throwaway one.
+    add_test(NAME tst_mpriscontroller_bus
+             COMMAND ${DBUS_RUN_SESSION} --config-file=${CMAKE_CURRENT_SOURCE_DIR}/dbus-test-session.conf
+                     -- ${CMAKE_COMMAND} -E env GLASSOSD_PRIVATE_BUS=1
+                     $<TARGET_FILE:tst_mpriscontroller>)
+    set_tests_properties(tst_mpriscontroller_bus PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
         TIMEOUT 60)
 endif()

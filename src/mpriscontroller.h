@@ -14,6 +14,8 @@
 
 #include <QDBusServiceWatcher>
 #include <QObject>
+#include <QTimer>
+#include <QVariantMap>
 #include <QQmlEngine>
 #include <QString>
 
@@ -53,10 +55,17 @@ private Q_SLOTS:
     /* Connected by name from the PropertiesChanged signal, so it has to be a
        real slot rather than a plain member. */
     void refresh();
+    void scheduleRefresh();
+
+public:
+    /* Metadata as it came off the bus, demarshalled only if it is the a{sv}
+       the spec says it is. Exposed for the tests. */
+    static QVariantMap parseMetadata(const QVariant &value);
 
 private:
     void findPlayer();
     void call(const QString &method);
+    void applyPlayerProperties(const QVariantMap &props);
 
     QDBusServiceWatcher m_watcher;
     QString m_service;
@@ -65,4 +74,10 @@ private:
     QString m_artUrl;
     QString m_identity;
     bool m_playing = false;
+    /* Every bus read is asynchronous; a reply for a request that has since
+       been superseded is dropped by generation. */
+    quint64 m_generation = 0;       // refresh() reads
+    quint64 m_findGeneration = 0;   // findPlayer(); separate, or a refresh
+                                    // landing mid-discovery discarded it
+    QTimer m_refreshDebounce;
 };
