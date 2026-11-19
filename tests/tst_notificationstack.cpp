@@ -569,6 +569,41 @@ private Q_SLOTS:
         QVERIFY2(m_model->isHovered(n.id), "the pointer is on the card's button, but the card was told it left");
     }
 
+    /* Hovering a card swaps its time for Options, which opens the card's
+       menu; the cell keeps its width so the row does not reflow. */
+    void optionsReplacesTheTimeOnHover()
+    {
+        m_model->insert(note(QStringLiteral("hover me")));
+        QTRY_COMPARE(cards().size(), 1);
+        waitSettled();
+        QQuickItem *card = cards().constFirst();
+        QQuickItem *options = nullptr;
+        QQuickItem *menu = nullptr;
+        std::function<void(QQuickItem *)> walk = [&](QQuickItem *it) {
+            for (QQuickItem *c : it->childItems()) {
+                if (c->property("text").toString() == QLatin1String("Options")) {
+                    options = c->parentItem();
+                }
+                if (c->metaObject()->indexOfProperty("atX") >= 0) {
+                    menu = c;
+                }
+                walk(c);
+            }
+        };
+        walk(card);
+        QVERIFY(options && menu);
+        const qreal cellWidth = options->parentItem()->width();
+        QVERIFY(!options->isVisible());
+        QTest::mouseMove(m_win, drawn(card).center().toPoint());
+        QTRY_COMPARE(options->opacity(), 1.0);
+        QCOMPARE(options->parentItem()->width(), cellWidth);
+        const QPoint at = options->mapToScene(QPointF(options->width() / 2, options->height() / 2)).toPoint();
+        QTest::mouseMove(m_win, at);
+        QTest::mouseClick(m_win, Qt::LeftButton, Qt::NoModifier, at);
+        QTRY_VERIFY(menu->property("open").toBool());
+        QCOMPARE(m_model->rowCount(), 1);   // the click opened the menu, it did not dismiss
+    }
+
     /* e099271: a settings change re-sends the position. With a sliding theme
        the right margin is folded into the layout, and passing it to the
        layer shell as well pushed the surface inward on every change. */

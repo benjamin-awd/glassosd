@@ -966,18 +966,83 @@ Item {
                         elide: Text.ElideRight
                     }
 
-                    /* Snooze and settings live in the card's menu now, so
-                       nothing swaps in this cell and the time simply stays
-                       put. What this replaced reflowed the row under the
-                       pointer on hover. */
-                    Text {
+                    /* The time, which an Options control replaces while the
+                       pointer is on the card, as a macOS banner swaps its
+                       timestamp for Options on hover. It opens the same menu
+                       as a right-click (snooze, settings), which had no
+                       visible way in.
+
+                       Both sit in one cell as wide as the wider of the two,
+                       and swap by opacity, so nothing reflows under the
+                       pointer: what this cell held before reflowed the row
+                       on hover. */
+                    Item {
+                        id: timeCell
                         Layout.alignment: Qt.AlignVCenter
-                        visible: Appearance.notifyHeader.includes("time")
-                        text: root.entry.when
-                        color: Style.notifyTime
-                        font.family: Style.fontFamily
-                        font.pointSize: Style.notifyTimePx > 0 ? Style.notifyTimePx * 0.75
-                                                               : Style.notifyFontSize - 2
+                        readonly property bool showTime: Appearance.notifyHeader.includes("time")
+                        readonly property bool offerOptions: !NotificationModel.screenLocked
+                        readonly property bool optionsUp: offerOptions && (root.pointerOn || cardMenu.open)
+                        visible: showTime || offerOptions
+                        implicitWidth: Math.max(showTime ? timeText.implicitWidth : 0,
+                                                offerOptions ? options.implicitWidth : 0)
+                        implicitHeight: Math.max(timeText.implicitHeight, options.implicitHeight)
+
+                        Text {
+                            id: timeText
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            visible: timeCell.showTime
+                            opacity: timeCell.optionsUp ? 0 : 1
+                            Behavior on opacity { NumberAnimation { duration: 120 } }
+                            text: root.entry.when
+                            color: Style.notifyTime
+                            font.family: Style.fontFamily
+                            font.pointSize: Style.notifyTimePx > 0 ? Style.notifyTimePx * 0.75
+                                                                   : Style.notifyFontSize - 2
+                        }
+
+                        Rectangle {
+                            id: options
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            opacity: timeCell.optionsUp ? 1 : 0
+                            visible: opacity > 0
+                            Behavior on opacity { NumberAnimation { duration: 120 } }
+                            implicitWidth: optionsLabel.implicitWidth + 16
+                            implicitHeight: optionsLabel.implicitHeight + 4
+                            width: implicitWidth
+                            height: implicitHeight
+                            radius: height / 2
+                            color: optionsArea.pressed ? Style.controlFillActive
+                                 : optionsArea.containsMouse ? Style.controlFillHover
+                                                             : Style.controlFill
+                            Behavior on color { ColorAnimation { duration: 100 } }
+
+                            Text {
+                                id: optionsLabel
+                                anchors.centerIn: parent
+                                text: "Options"
+                                color: Style.foreground
+                                font.family: Style.fontFamily
+                                font.pointSize: Style.notifyTimePx > 0 ? Style.notifyTimePx * 0.75
+                                                                       : Style.notifyFontSize - 2
+                            }
+
+                            MouseArea {
+                                id: optionsArea
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                enabled: timeCell.optionsUp
+                                onClicked: {
+                                    if (cardMenu.open) {
+                                        cardMenu.close()
+                                        return
+                                    }
+                                    const p = options.mapToItem(cardMenu, 0, options.height + 4)
+                                    cardMenu.openAt(cardMenu.width, p.y)   // clamped to the right edge
+                                }
+                            }
+                        }
                     }
                 }
 
