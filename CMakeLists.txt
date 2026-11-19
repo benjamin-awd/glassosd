@@ -76,6 +76,10 @@ qt_add_qml_module(glassosd
         qml/PanelButton.qml
         qml/Toggle.qml
         qml/CardButton.qml
+        qml/CardStackSurface.qml
+        qml/CardMenu.qml
+        qml/CardReply.qml
+        qml/CardActions.qml
         qml/SliderRow.qml
         qml/ButtonsGrid.qml
     RESOURCES
