@@ -73,6 +73,9 @@ glassosd_test(tst_theme
     SOURCES theme.cpp colorscheme.cpp
     LIBS Qt6::Qml Qt6::DBus KF6::ConfigCore)
 
+glassosd_test(tst_quitonsignal
+    SOURCES quitonsignal.cpp)
+
 glassosd_test(tst_lockwatcher
     SOURCES lockwatcher.cpp)
 

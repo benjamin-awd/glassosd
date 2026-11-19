@@ -55,6 +55,7 @@ qt_add_executable(glassosd
     src/soundplayer.cpp
     src/busywatcher.cpp
     src/systemcontrols.cpp
+    src/quitonsignal.cpp
 )
 
 target_compile_definitions(glassosd PRIVATE GLASSOSD_VERSION="${PROJECT_VERSION}")

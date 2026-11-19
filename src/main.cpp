@@ -20,6 +20,7 @@
 #include "portalrelay.h"
 #include "portalserver.h"
 #include "snoozestore.h"
+#include "quitonsignal.h"
 #include "soundplayer.h"
 #include "busywatcher.h"
 #include "notifyimageprovider.h"
@@ -693,5 +694,11 @@ int main(int argc, char *argv[])
     if (engine.rootObjects().isEmpty()) {
         return 1;
     }
+    /* systemctl stop/restart and logout send SIGTERM. Quit the ordinary
+       way, so aboutToQuit saves the history the debounce had not yet
+       written; see quitonsignal.h. */
+    auto *quitter = new QuitOnSignal(&app);
+    QObject::connect(quitter, &QuitOnSignal::received, &app, &QCoreApplication::quit);
+
     return app.exec();
 }
