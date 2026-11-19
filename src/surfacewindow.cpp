@@ -687,44 +687,53 @@ void Surface::allowOnLockScreen(QQuickWindow *window)
     }
 
     /* The QtWayland window exists once the QWindow has a platform window,
-       which for a window not yet shown means waiting for it. */
+       which for a window not yet shown means waiting for it.
+
+       And it does not exist once: losing the output the surface was on (an
+       undock) closes the layer surface, Qt destroys the platform window, and
+       showing it again builds a new QWaylandWindow. The hook used to be made
+       once and the filter below removed after its first success, so after
+       any dock or undock the recreated surface was never allowed on the lock
+       screen and notifications stopped appearing there until a restart. Every
+       platform window gets hooked, once each. */
     auto hook = [window]() {
         auto *ww = window->nativeInterface<QNativeInterface::Private::QWaylandWindow>();
         if (!ww) {
-            return false;
+            return;
         }
+        static const char kHooked[] = "_glassosd_lockscreen_hooked";
+        if (ww->property(kHooked).toBool()) {
+            return;
+        }
+        ww->setProperty(kHooked, true);
         QObject::connect(ww, &QNativeInterface::Private::QWaylandWindow::surfaceRoleCreated,
                          window, [ww]() {
                              if (ww->surface()) {
                                  overlay->allow(ww->surface());
                              }
                          });
-        return true;
     };
-    if (hook()) {
-        return;
-    }
-    /* Not yet created. Waiting for the first visibleChanged would be too
-       late — the role, and the first buffer, exist by then and KWin rejects
-       allow() on a mapped surface with a fatal protocol error. The platform
-       surface event arrives before either. */
+    hook();
+    /* Not yet created, or recreated later. Waiting for visibleChanged would
+       be too late — the role, and the first buffer, exist by then and KWin
+       rejects allow() on a mapped surface with a fatal protocol error. The
+       platform surface event arrives before either. */
     class Filter : public QObject
     {
     public:
-        explicit Filter(std::function<bool()> f, QObject *parent)
+        explicit Filter(std::function<void()> f, QObject *parent)
             : QObject(parent), m_f(std::move(f)) {}
         bool eventFilter(QObject *, QEvent *e) override
         {
             if (e->type() == QEvent::PlatformSurface
                 && static_cast<QPlatformSurfaceEvent *>(e)->surfaceEventType()
-                       == QPlatformSurfaceEvent::SurfaceCreated
-                && m_f()) {
-                deleteLater();
+                       == QPlatformSurfaceEvent::SurfaceCreated) {
+                m_f();
             }
             return false;
         }
     private:
-        std::function<bool()> m_f;
+        std::function<void()> m_f;
     };
     window->installEventFilter(new Filter(hook, window));
 }
