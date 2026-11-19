@@ -135,6 +135,31 @@ private Q_SLOTS:
         QTRY_COMPARE(mpris.identity(), QStringLiteral("Fake Player"));
     }
 
+    /* Art the player names is loaded only from schemes that mean a picture;
+       an internal one (here glassosd's own image provider) is dropped. */
+    void artUrlIsLimitedToPictureSchemes()
+    {
+        REQUIRE_PRIVATE_BUS();
+        const QList<QPair<QString, bool>> cases = {
+            {QStringLiteral("https://i.scdn.co/image/abc"), true},
+            {QStringLiteral("file:///tmp/cover.png"), true},
+            {QStringLiteral("image://notifyimage/h12"), false},
+            {QStringLiteral("qrc:/qt/qml/org/glassosd/ui/icons/lock.svg"), false},
+        };
+        for (const auto &[url, kept] : cases) {
+            FakePlayer player;
+            QVariantMap meta;
+            meta.insert(QStringLiteral("xesam:title"), url);
+            meta.insert(QStringLiteral("mpris:artUrl"), url);
+            player.metadata = QVariant::fromValue(meta);
+            publish(&player);
+            MprisController mpris;
+            QTRY_COMPARE_WITH_TIMEOUT(mpris.title(), url, 3000);
+            QCOMPARE(mpris.artUrl(), kept ? url : QString());
+            unpublish();
+        }
+    }
+
     /* Metadata as a{ss}. Read as a{sv} it aborted the daemon. */
     void wrongShapeMetadataIsIgnored()
     {

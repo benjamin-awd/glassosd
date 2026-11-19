@@ -11,6 +11,7 @@
 #include <QDBusMessage>
 #include <QDBusMetaType>
 #include <QDBusPendingCallWatcher>
+#include <QDBusServiceWatcher>
 #include <QDBusPendingReply>
 
 using namespace NotificationWire;
@@ -38,6 +39,21 @@ PortalRelay::PortalRelay(QObject *parent)
                 this, SLOT(onActivationToken(uint, QString)));
     bus.connect(kFdoService, kFdoPath, kFdoIface, QStringLiteral("NotificationClosed"),
                 this, SLOT(onClosed(uint, uint)));
+
+    auto *watcher = new QDBusServiceWatcher(kFdoService, bus,
+                                            QDBusServiceWatcher::WatchForOwnerChange, this);
+    connect(watcher, &QDBusServiceWatcher::serviceOwnerChanged, this,
+            [this](const QString &, const QString &, const QString &) { daemonChanged(); });
+}
+
+void PortalRelay::daemonChanged()
+{
+    ++m_generation;
+    m_entries.clear();
+    m_ids.clear();
+    m_tokens.clear();
+    m_inFlight.clear();
+    m_withdrawn.clear();
 }
 
 QString PortalRelay::keyFor(const QString &appId, const QString &portalId)
@@ -150,9 +166,12 @@ void PortalRelay::addNotification(const QString &appId, const QString &portalId,
     m_withdrawn.remove(key);
     auto *watcher = new QDBusPendingCallWatcher(QDBusConnection::sessionBus().asyncCall(call), this);
     connect(watcher, &QDBusPendingCallWatcher::finished, this,
-            [this, key, appId, portalId, c, replaces](QDBusPendingCallWatcher *w) {
+            [this, key, appId, portalId, c, replaces, generation = m_generation](QDBusPendingCallWatcher *w) {
                 const QDBusPendingReply<uint> reply = *w;
                 w->deleteLater();
+                if (generation != m_generation) {
+                    return;   // answered by a daemon that has since gone
+                }
                 m_inFlight.remove(key);
                 if (reply.isError()) {
                     /* Once, not per notification: with nothing to relay to,

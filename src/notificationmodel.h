@@ -144,6 +144,7 @@ public:
 
     void setClockForTesting(std::function<QDateTime()> clock) { m_clock = std::move(clock); }
     void expireForTesting() { expireTick(); }
+    bool tickActiveForTesting() const { return m_tick.isActive(); }
 
     /* Put this one away and let it come back later. The notification itself
        is handed out rather than kept: persistence belongs to SnoozeStore, and
@@ -218,6 +219,12 @@ private:
        pixels; QML caches image://notifyimage/<id> by URL otherwise. */
     uint m_imageRev = 0;
     void expireTick();
+    /* The tick runs only while it has work: a card that can expire, or a
+       burst still inside the coalescing window. It used to run from startup
+       for the life of the session, four wakeups a second with nothing on
+       screen. Called wherever either can change: update() (every arrival,
+       close and promotion ends there) and the tick itself. */
+    void syncTick();
     void finishClose(uint id);
     QDateTime now() const { return m_clock(); }
     /* Row of the newest card that is not closing, or -1. */

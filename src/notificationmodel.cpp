@@ -58,7 +58,6 @@ NotificationModel::NotificationModel(QObject *parent)
     connect(this, &QAbstractItemModel::rowsRemoved, this, announceLive);
     connect(this, &QAbstractItemModel::modelReset, this, announceLive);
     connect(this, &QAbstractItemModel::dataChanged, this, announceLive);
-    m_tick.start();
 
     auto *kit = KIdleTime::instance();
     connect(kit, &KIdleTime::timeoutReached, this, [this](int id, int) {
@@ -884,6 +883,23 @@ void NotificationModel::update()
         m_lastHiddenCount = m_waiting.size();
         Q_EMIT hiddenCountChanged();
     }
+    syncTick();
+}
+
+void NotificationModel::syncTick()
+{
+    bool work = !m_recentByGroup.isEmpty();
+    for (const Notification &n : std::as_const(m_displayed)) {
+        if (work) {
+            break;
+        }
+        work = n.timeoutMs > 0 && !n.closing;
+    }
+    if (work && !m_tick.isActive()) {
+        m_tick.start();
+    } else if (!work && m_tick.isActive()) {
+        m_tick.stop();
+    }
 }
 
 /* The row's index will have moved if anything above it went first, and
@@ -923,12 +939,14 @@ void NotificationModel::expireTick()
        read these", which is a property of the session, not of any one
        message. */
     if (m_userIdle) {
+        syncTick();
         return;
     }
     /* Likewise while locked. A card on the lock screen is waiting for someone
        to come back, and expiring it there means it was never read; on unlock
        setScreenLocked() restarts the dwell, as resuming from idle does. */
     if (m_screenLocked) {
+        syncTick();
         return;
     }
 
@@ -948,6 +966,7 @@ void NotificationModel::expireTick()
     for (uint id : std::as_const(expired)) {
         closeId(id, CloseReason::Expired);
     }
+    syncTick();
 }
 
 void NotificationModel::setIdleThresholdMs(int ms)

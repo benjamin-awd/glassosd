@@ -84,6 +84,34 @@ private:
     }
 
 private Q_SLOTS:
+    /* The expiry tick sleeps when there is nothing for it to do: nothing on
+       screen that can expire and no burst inside the coalescing window. */
+    void tickRunsOnlyWhileThereIsWork()
+    {
+        FakeClock clock;
+        NotificationModel m;
+        clock.install(m);
+        m.setCoalesce(3, 1000);
+        m.setTimeouts(500, 500, 0);
+        QVERIFY(!m.tickActiveForTesting());   // idle from startup
+
+        m.insert(note(QStringLiteral("App"), QStringLiteral("a"), {}, 1));
+        QVERIFY(m.tickActiveForTesting());
+
+        clock.advance(m, 600);                // the card expires...
+        QTRY_COMPARE(m.liveCount(), 0);
+        clock.advance(m, 600);                // ...and the burst window lapses
+        QVERIFY(!m.tickActiveForTesting());
+
+        /* A card that never expires is not work. */
+        m.setCoalesce(0, 0);
+        Notification critical = note(QStringLiteral("App"), QStringLiteral("c"), {}, 2);
+        critical.urgency = Urgency::Critical;
+        m.insert(critical);
+        QCOMPARE(m.liveCount(), 1);
+        QVERIFY(!m.tickActiveForTesting());
+    }
+
     void insertedNotificationIsShown()
     {
         NotificationModel m;

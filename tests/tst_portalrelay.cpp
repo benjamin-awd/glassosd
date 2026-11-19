@@ -443,6 +443,34 @@ private Q_SLOTS:
 
     /* Nothing owns the name at all. The relay must still answer the portal —
        that is the whole fix — and simply fail the one notification. */
+    /* A new daemon numbers from 1 again and never closes the old one's
+       notifications, so the relay forgets them all when the name changes
+       hands: a click on the new daemon's id 100 is not this app's, and the
+       app's next notification is a new one, not a replacement of id 100. */
+    void aNewDaemonStartsClean()
+    {
+        NEED_PRIVATE_BUS();
+        PortalRelay relay;
+        QSignalSpy spy(&relay, &PortalBackend::actionInvoked);
+        relay.addNotification(QStringLiteral("org.example.App"), QStringLiteral("n1"),
+                              {{QStringLiteral("default-action"), v(QStringLiteral("open"))}});
+        QTRY_COMPARE(m_fake->calls.size(), 1);
+        QTest::qWait(50);
+
+        QVERIFY(m_daemonBus.unregisterService(QStringLiteral("org.freedesktop.Notifications")));
+        QVERIFY(m_daemonBus.registerService(QStringLiteral("org.freedesktop.Notifications")));
+        QTest::qWait(100);   // let the owner-change signals arrive
+
+        Q_EMIT m_fake->ActionInvoked(100, QStringLiteral("default"));
+        QTest::qWait(100);
+        QCOMPARE(spy.count(), 0);
+
+        relay.addNotification(QStringLiteral("org.example.App"), QStringLiteral("n1"),
+                              {{QStringLiteral("title"), v(QStringLiteral("again"))}});
+        QTRY_COMPARE(m_fake->calls.size(), 2);
+        QCOMPARE(m_fake->calls.at(1).replaces, 0u);
+    }
+
     void noDaemonDoesNotBreakTheRelay()
     {
         NEED_PRIVATE_BUS();

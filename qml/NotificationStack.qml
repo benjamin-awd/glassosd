@@ -36,7 +36,10 @@ Window {
        better failure than no notification daemon. */
     readonly property int maxW: screen ? screen.width : 4096
     readonly property int maxH: screen ? screen.height : 4096
-    width: Math.min(maxW, Style.notifyWidth + Style.shadowPad * 2 + edgeInset)
+    /* At least 1, as the height is: a placeholder screen (no outputs, a
+       dock mid-switch) reports 0x0, and a 0-wide layer surface is a protocol
+       error rather than an invisible window. */
+    width: Math.max(1, Math.min(maxW, Style.notifyWidth + Style.shadowPad * 2 + edgeInset))
 
     /* Grows while on screen, never shrinks; back to fitting once hidden.
 

@@ -83,5 +83,14 @@ private:
     QSet<QString> m_inFlight;       // Notify sent, reply not yet back
     QSet<QString> m_withdrawn;      // removed while its Notify was in flight
     QHash<uint, QString> m_tokens;  // ActivationToken arrives just before ActionInvoked
+    /* Bumped whenever org.freedesktop.Notifications changes hands. The ids
+       above are the old daemon's: it never sends NotificationClosed for
+       them, so they would stay forever, and the new daemon numbers from 1
+       again, so a stale entry would route a click on some other app's
+       notification to a portal app, and a portal app's next notification
+       would replace whatever now holds its old id. A reply to a Notify sent
+       to the old daemon is dropped by comparing generations. */
+    quint64 m_generation = 0;
+    void daemonChanged();
     bool m_warned = false;
 };

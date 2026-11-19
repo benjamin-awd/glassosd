@@ -5,6 +5,8 @@
 */
 #include "mpriscontroller.h"
 
+#include <QUrl>
+
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
 #include <QDBusInterface>
@@ -225,7 +227,22 @@ void MprisController::applyPlayerProperties(const QVariantMap &props)
     m_title = meta.value(QStringLiteral("xesam:title")).toString();
     /* xesam:artist is a list; join it rather than showing only the first. */
     m_artist = meta.value(QStringLiteral("xesam:artist")).toStringList().join(QStringLiteral(", "));
-    m_artUrl = meta.value(QStringLiteral("mpris:artUrl")).toString();
+    /* The player chooses this URL and the centre loads it, so only schemes
+       that mean "a picture": a file, the web, or inline data. Anything else
+       (qrc:, image://notifyimage/..., an image provider's own scheme) would
+       let a player point the centre at glassosd's internals; dropped, the
+       chip shows its placeholder.
+
+       Remote art is kept, knowingly. It is a fetch the player asked for, to
+       a host the player picked, and it is what Spotify and every browser
+       send (https://i.scdn.co/..., the page's own artwork). Refusing it
+       would cost the art of most players to save a request the player could
+       make itself. It only happens while the centre is open. */
+    const QString art = meta.value(QStringLiteral("mpris:artUrl")).toString();
+    const QString scheme = QUrl(art).scheme().toLower();
+    m_artUrl = (scheme == QLatin1String("file") || scheme == QLatin1String("https")
+                || scheme == QLatin1String("http") || scheme == QLatin1String("data"))
+                   ? art : QString();
     Q_EMIT changed();
 }
 
