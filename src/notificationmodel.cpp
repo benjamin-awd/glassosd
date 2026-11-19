@@ -540,9 +540,11 @@ bool NotificationModel::coalesce(const Notification &n)
        with its sender, who is not told anything happened. Only the card on
        screen changes. */
     QList<Notification> members;
+    QList<uint> retired;
     auto absorb = [&](const Notification &old) {
         members << old;
         members << m_members.take(old.id);
+        retired << m_retired.take(old.id);
     };
     QList<uint> onScreen;
     for (const Notification &old : std::as_const(m_displayed)) {
@@ -565,7 +567,9 @@ bool NotificationModel::coalesce(const Notification &n)
         return a.received != b.received ? a.received > b.received : a.id > b.id;
     });
     while (members.size() > kMaxMembers) {
-        Q_EMIT notificationClosed(members.takeLast().id, CloseReason::Expired);
+        const uint oldest = members.takeLast().id;
+        retired << oldest;   // still the group's, for its clear (groupIds())
+        Q_EMIT notificationClosed(oldest, CloseReason::Expired);
     }
 
     Notification merged = n;
@@ -575,6 +579,9 @@ bool NotificationModel::coalesce(const Notification &n)
        list is still an owner to every m_members.contains(). */
     if (!members.isEmpty()) {
         m_members.insert(merged.id, members);
+    }
+    if (!retired.isEmpty()) {
+        m_retired.insert(merged.id, retired);
     }
 
     /* The group is on screen: its newest card becomes the merged card where it
@@ -605,6 +612,18 @@ bool NotificationModel::coalesce(const Notification &n)
        keeps one live card rather than re-popping behind whatever else is up. */
     m_waiting.prepend(merged);
     return true;
+}
+
+QVariantList NotificationModel::groupIds(uint owner) const
+{
+    QVariantList out{owner};
+    for (const Notification &m : m_members.value(owner)) {
+        out << m.id;
+    }
+    for (uint id : m_retired.value(owner)) {
+        out << id;
+    }
+    return out;
 }
 
 uint NotificationModel::ownerOf(uint id) const
@@ -808,6 +827,8 @@ bool NotificationModel::closeId(uint id, uint reason)
         }
     }
 
+    m_retired.remove(id);   // the group is over
+
     const int row = indexOfDisplayed(id);
     if (row >= 0) {
         m_hovered.remove(id);
@@ -844,8 +865,14 @@ bool NotificationModel::closeId(uint id, uint reason)
 
 void NotificationModel::moveMembers(uint from, uint to)
 {
-    if (from != to && m_members.contains(from)) {
+    if (from == to) {
+        return;
+    }
+    if (m_members.contains(from)) {
         m_members.insert(to, m_members.take(from));
+    }
+    if (m_retired.contains(from)) {
+        m_retired.insert(to, m_retired.take(from));
     }
 }
 
@@ -864,6 +891,9 @@ bool NotificationModel::closeOne(uint id, uint reason)
     next.groupCount = 1 + int(rest.size());
     if (!rest.isEmpty()) {
         m_members.insert(next.id, rest);
+    }
+    if (m_retired.contains(id)) {
+        m_retired.insert(next.id, m_retired.take(id));
     }
     const int at = indexOfDisplayed(id);
     if (at >= 0) {
@@ -898,6 +928,7 @@ int NotificationModel::closeEverything(uint reason)
         for (const Notification &m : m_members.take(n.id)) {
             Q_EMIT notificationClosed(m.id, reason);
         }
+        m_retired.remove(n.id);
         Q_EMIT notificationClosed(n.id, reason);
     }
 

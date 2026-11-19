@@ -225,6 +225,10 @@ public:
     /* A click on a card or a group member: its default action if it has
        one, otherwise launch its app (launchRequested) and dismiss it. */
     Q_INVOKABLE void open(QQuickWindow *window, uint id);
+    /* Every notification a group's card stands for: itself, its live
+       members, and the oldest ones the member cap closed, which the centre
+       still holds. What the open group's clear removes from history. */
+    Q_INVOKABLE QVariantList groupIds(uint owner) const;
 
 Q_SIGNALS:
     void hiddenCountChanged();
@@ -311,6 +315,9 @@ private:
     void retireRow(uint id);
     /* A group follows its top card to a new id. */
     void moveMembers(uint from, uint to);
+    /* Per top card: ids of its group the member cap closed (still in
+       history). Moves with the group, goes when the group ends. */
+    QHash<uint, QList<uint>> m_retired;
     void ageTick();
 
     int m_limit = 4;

@@ -296,8 +296,10 @@ Window {
                 /* The open group's clear: every notification in it, and from
                    the centre as well, as clearing a stack does on macOS. */
                 onGroupCleared: {
-                    const ids = [model.notifId].concat((model.members || []).map(m => m.id))
-                    HistoryModel.removeIds(ids)
+                    /* groupIds, not the members role: it also has the
+                       oldest ones the 50-member cap closed, which stayed in
+                       the centre after the clear. */
+                    HistoryModel.removeIds(NotificationModel.groupIds(model.notifId))
                     NotificationModel.dismiss(model.notifId)
                 }
                 onSettingsRequested: HistoryModel.showGroup(model.groupKey, true)

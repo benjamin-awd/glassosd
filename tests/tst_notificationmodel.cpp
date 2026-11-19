@@ -445,6 +445,28 @@ private Q_SLOTS:
         QVERIFY(memberWhen() != QStringLiteral("now"));
     }
 
+    /* A group's clear takes everything its card stands for from history,
+       the members the 50 cap closed included: they stayed in the centre.
+       The list follows the group when the next member takes the card. */
+    void groupIdsIncludeWhatTheCapClosed()
+    {
+        NotificationModel m;
+        m.setCoalesce(3, 20000);
+        m.setTimeouts(0, 0, 0);
+        for (uint id = 1001; id <= 1055; ++id) {
+            m.insert(note(QStringLiteral("Bulk"), QStringLiteral("b%1").arg(id), {}, id));
+        }
+        QCOMPARE(m.index(0).data(NotificationModel::GroupCountRole).toInt(), 51);
+        QVariantList ids = m.groupIds(1055);
+        QCOMPARE(ids.size(), 55);
+        QVERIFY(ids.contains(1001u) && ids.contains(1004u));   // closed by the cap
+        m.invokeAction(1055, QStringLiteral("default"));        // 1054 takes the card
+        ids = m.groupIds(1054);
+        QCOMPARE(ids.size(), 54);
+        QVERIFY(ids.contains(1001u));
+        QVERIFY(m.groupIds(1055).size() == 1);                  // nothing left under the old id
+    }
+
     /* A card that stays up is told the time has moved on. */
     void theAgeTickRunsWhileCardsAreShown()
     {
