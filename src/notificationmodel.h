@@ -66,6 +66,7 @@ public:
         ProgressRole,
         BadgeSourceRole,
         RealActionsRole,   // the actions with their real labels, for data() itself
+        MembersRole,       // a group's other live notifications, as maps, newest first
     };
     Q_ENUM(Roles)
 
@@ -190,13 +191,16 @@ public:
     bool isLive(uint id) const;
     /* Live and offering a "default" action, i.e. a click on it means
        something to its sender. */
-    bool hasDefaultAction(uint id) const;
+    Q_INVOKABLE bool hasDefaultAction(uint id) const;
     Q_INVOKABLE void sendReply(uint id, const QString &text);
 
     /* Activating a notification has to hand the sender an XDG activation
        token, otherwise focus-stealing prevention stops it raising its window
        and clicking the notification appears to do nothing. */
     Q_INVOKABLE void activate(QQuickWindow *window, uint id, const QString &key);
+    /* A click on a card or a group member: its default action if it has
+       one, otherwise launch its app (launchRequested) and dismiss it. */
+    Q_INVOKABLE void open(QQuickWindow *window, uint id);
 
 Q_SIGNALS:
     void hiddenCountChanged();
@@ -215,6 +219,8 @@ Q_SIGNALS:
        silences the sound along with the popup — a notification nobody is shown
        should not announce itself. */
     void soundWanted(const QString &name);
+    /* Wired in main.cpp to the same launcher a centre click uses. */
+    void launchRequested(const QString &desktopEntry, const QString &activationToken);
 
 private:
     void update();
@@ -251,6 +257,31 @@ private:
 
     QList<Notification> m_displayed;
     QList<Notification> m_waiting;
+
+    /* A group's other notifications, keyed by the id of the one on show
+       (displayed or queued), newest first.
+
+       They stay live, as a macOS stack's do: coalescing used to tell each
+       sender its older notifications had closed, so an open group's older
+       cards could only launch the app, never open their own message or run
+       their own action. Kept here rather than inside Notification, which
+       would have to hold a list of itself. */
+    QHash<uint, QList<Notification>> m_members;
+    /* More than this and the oldest close as before: a 300-message wake-up
+       burst does not keep 300 senders waiting. */
+    static constexpr int kMaxMembers = 50;
+    QVariant roleFor(const Notification &n, int role) const;
+    /* Any live notification by id: a row, a queued one, or a member. */
+    const Notification *find(uint id) const;
+    /* The representative whose group holds `id`, or 0. */
+    uint ownerOf(uint id) const;
+    /* Close one member: the sender is told, the group shrinks. */
+    bool closeMember(uint id, uint reason);
+    /* Tell a row's view its group changed (count and members). */
+    void groupChanged(uint ownerId);
+    /* Take a row off the screen without telling its sender, for a card
+       whose notification lives on as a member of another. */
+    void retireRow(uint id);
 
     int m_limit = 4;
     int m_timeoutLow = 4000;

@@ -284,14 +284,22 @@ Window {
 
                 onDismissed: NotificationModel.dismiss(model.notifId)
                 onHoverChanged: h => NotificationModel.setHovered(model.notifId, h)
-                onActivated: NotificationModel.activate(win, model.notifId, "default")
+                onActivated: NotificationModel.open(win, model.notifId)
                 onActionTriggered: key => NotificationModel.activate(win, model.notifId, key)
                 onReplySent: text => NotificationModel.sendReply(model.notifId, text)
                 /* These two did the same thing, which is why "N more
                    notifications" opened the settings panel: it was the gear's
                    behaviour, and the group stayed folded on top of that. */
                 onMoreRequested: HistoryModel.showGroup(model.groupKey, false)
-                onMemberActivated: id => HistoryModel.activateId(id)
+                onMemberActivated: id => NotificationModel.open(win, id)
+                onMemberDismissed: id => NotificationModel.dismiss(id)
+                /* The open group's clear: every notification in it, and from
+                   the centre as well, as clearing a stack does on macOS. */
+                onGroupCleared: {
+                    const ids = [model.notifId].concat((model.members || []).map(m => m.id))
+                    HistoryModel.removeIds(ids)
+                    NotificationModel.dismiss(model.notifId)
+                }
                 onSettingsRequested: HistoryModel.showGroup(model.groupKey, true)
                 onSnoozeRequested: NotificationModel.snooze(model.notifId)
             }

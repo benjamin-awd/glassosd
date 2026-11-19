@@ -11,4 +11,6 @@ QtObject {
     function showGroup(k, settings) { lastGroup = k }
     function groupMembers(key, excludeId, max) { return members.slice(0, max) }
     function activateId(id) { lastActivated = id }
+    property var removedIds: []
+    function removeIds(ids) { removedIds = ids }
 }

@@ -503,11 +503,11 @@ Item {
        above the top card, and each earlier notification as a card of its own
        below it, sliding out from under the top card where the sheets were.
 
-       The popup model only counts a group's members (coalescing closes them
-       with their senders as it merges), so those cards are read from history,
-       which recorded each one on arrival. Never on the lock screen: the way
-       in is withheld there, and a group left open must not keep showing what
-       the lock screen hides. */
+       The members are live notifications (the model's `members` role): each
+       one still opens its own message or runs its own default action, and
+       can be dismissed on its own. Never on the lock screen: the way in is
+       withheld there, and a group left open must not keep showing what the
+       lock screen hides. */
     property bool groupOpen: false
     readonly property bool groupShown: groupOpen && root.entry.groupCount > 1
                                        && !NotificationModel.screenLocked
@@ -525,35 +525,17 @@ Item {
             easing.bezierCurve: Style.curveIn
         }
     }
-    /* Read when the group opens and when history changes, not bound to
-       progress: a new array rebuilds every member card, and closing has to
-       keep them while they slide back in. Cleared once fully closed. */
-    property var groupMembers: []
+    /* The live members, newest first, capped. Bound while the group is
+       open or still sliding shut; empty once fully closed, so no member
+       card exists for a closed stack. */
+    readonly property var groupMembers: (groupShown || groupProgress > 0)
+                                        ? (root.entry.members || []).slice(0, groupRowsMax) : []
     /* The open group's own pointer: on a member card or the header. */
     property int groupHovers: 0
-    function refreshMembers() {
-        if (!groupShown)
-            return
-        groupMembers = HistoryModel.groupMembers(root.entry.groupKey, root.entry.notifId,
-                                                 Math.min(root.entry.groupCount - 1, groupRowsMax))
-    }
-    onGroupProgressChanged: if (groupProgress === 0 && !groupShown) groupMembers = []
-    Connections {
-        target: HistoryModel
-        function onChanged() { root.refreshMembers() }
-    }
-    Connections {
-        target: root.entry
-        ignoreUnknownSignals: true
-        function onGroupCountChanged() { root.refreshMembers() }
-    }
     /* An open group is being read: it stays until closed or cleared, as an
        expanded stack in Notification Centre does, rather than expiring the
        moment the pointer wanders off it. */
-    onGroupShownChanged: {
-        refreshMembers()
-        root.hoverChanged(pointerOn || cardMenu.open || groupShown)
-    }
+    onGroupShownChanged: root.hoverChanged(pointerOn || cardMenu.open || groupShown)
 
     /* The header's height is fixed rather than read from the loaded item, so
        cardTop has something to animate towards from the first frame. */
@@ -582,6 +564,9 @@ Item {
     signal snoozeRequested()
     signal moreRequested()
     signal memberActivated(int id)
+    signal memberDismissed(int id)
+    /* The header's clear: the whole group, and from the centre too. */
+    signal groupCleared()
     signal actionTriggered(string key)
     signal replySent(string text)
     signal activated()
@@ -622,6 +607,18 @@ Item {
         card: card
         depth: root.shownDepth
         pressed: cardHover.pressed
+    }
+    /* The sheets peeking out under a stack are its other notifications: a
+       click on them opens the group, which is what reaching for "the ones
+       underneath" means. The sheets register their own input regions. */
+    MouseArea {
+        visible: root.stacked && !NotificationModel.screenLocked
+        x: card.x
+        y: card.y + card.height
+        width: card.width
+        height: Math.max(0, root.closedHeight - card.height)
+        cursorShape: Qt.PointingHandCursor
+        onClicked: root.groupOpen = true
     }
 
     GlassPanel {
@@ -849,15 +846,14 @@ Item {
                    it published one — that is what makes a chat notification
                    open the conversation. Middle-click always just dismisses,
                    and so does left-click when there is no default action. */
-                /* A closed stack opens on a click, as macOS opens one in
-                   Notification Centre: the click is asking what is under the
-                   top card. Its default action is a click away once open. */
-                if (mouse.button === Qt.LeftButton && root.stacked
-                    && root.entry.groupCount > 1 && !NotificationModel.screenLocked) {
-                    root.groupOpen = true
-                    return
-                }
-                if (mouse.button === Qt.LeftButton && root.entry.hasDefaultAction)
+                /* A left click always opens, as a macOS banner's does: the
+                   sender's default action, or else its app (the model
+                   decides; see NotificationModel::open). It used to dismiss
+                   a card with no default action and expand a stacked one,
+                   which made the same click mean three things. The stack
+                   opens from "Show N more" or a click on its sheets. A middle
+                   click still just dismisses. */
+                if (mouse.button === Qt.LeftButton)
                     root.activated()
                 else
                     root.dismissed()
@@ -1353,7 +1349,7 @@ Item {
                     icon: "close"
                     color: "transparent"
                     border.width: 0
-                    onActivated: root.dismissed()
+                    onActivated: root.groupCleared()
                 }
             }
         }
@@ -1402,6 +1398,7 @@ Item {
             onHoveredChanged: root.groupHovers += hovered ? 1 : -1
             Component.onDestruction: if (hovered) root.groupHovers -= 1
             onActivated: root.memberActivated(modelData.id)
+            onDismissed: root.memberDismissed(modelData.id)
         }
     }
 

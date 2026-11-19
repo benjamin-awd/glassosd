@@ -100,6 +100,35 @@ QVariant NotificationModel::data(const QModelIndex &index, int role) const
         return {};
     }
     const Notification &n = m_displayed.at(index.row());
+    switch (role) {
+    case GroupCountRole: return 1 + int(m_members.value(n.id).size());
+    case MembersRole: {
+        /* A live group's other notifications, newest first, each masked
+           exactly as a card of its own would be: they are read through
+           roleFor(), the same path a row is. */
+        QVariantList out;
+        for (const Notification &m : m_members.value(n.id)) {
+            out.append(QVariantMap{
+                {QStringLiteral("id"), m.id},
+                {QStringLiteral("summary"), roleFor(m, SummaryRole)},
+                {QStringLiteral("body"), roleFor(m, BodyRole)},
+                {QStringLiteral("iconSource"), roleFor(m, IconSourceRole)},
+                {QStringLiteral("badgeSource"), roleFor(m, BadgeSourceRole)},
+                {QStringLiteral("when"), roleFor(m, WhenRole)},
+                {QStringLiteral("actions"), roleFor(m, ActionsRole)},
+                {QStringLiteral("hasDefaultAction"), roleFor(m, HasDefaultActionRole)},
+                {QStringLiteral("repeatCount"), 1},
+            });
+        }
+        return out;
+    }
+    default:
+        return roleFor(n, role);
+    }
+}
+
+QVariant NotificationModel::roleFor(const Notification &n, int role) const
+{
 
     if (m_screenLocked) {
         /* Nothing on a lock screen acts on the sender's behalf. KWin routes
@@ -140,7 +169,7 @@ QVariant NotificationModel::data(const QModelIndex &index, int role) const
                Jane\", \"Join: Board review\". They read as generic. */
             case ActionsRole: {
                 QVariantList out;
-                const QVariantList real = data(index, NotificationModel::RealActionsRole).toList();
+                const QVariantList real = roleFor(n, NotificationModel::RealActionsRole).toList();
                 for (int i = 0; i < real.size(); ++i) {
                     QVariantMap a = real.at(i).toMap();
                     a.insert(QStringLiteral("label"), real.size() == 1 ? tr("Action") : tr("Action %1").arg(i + 1));
@@ -205,7 +234,6 @@ QVariant NotificationModel::data(const QModelIndex &index, int role) const
         }
         return false;
     }
-    case GroupCountRole: return n.groupCount;
     case GroupKeyRole:   return n.groupKey();
     case ProgressRole:         return n.progressValue;
     case InlineReplyRole:      return n.inlineReply;
@@ -258,6 +286,7 @@ QHash<int, QByteArray> NotificationModel::roleNames() const
         {ActionsRole, "actions"},
         {HasDefaultActionRole, "hasDefaultAction"},
         {GroupCountRole, "groupCount"},
+        {MembersRole, "members"},
         {ClosingRole, "closing"},
         {StackTagRole, "stackTag"},
         {GroupKeyRole, "groupKey"},
@@ -275,6 +304,13 @@ ImageData NotificationModel::imageFor(uint id) const
     for (const Notification &n : m_displayed) {
         if (n.id == id) {
             return n.image;
+        }
+    }
+    for (const QList<Notification> &list : m_members) {
+        for (const Notification &m : list) {
+            if (m.id == id) {
+                return m.image;
+            }
         }
     }
     for (const Notification &n : m_waiting) {
@@ -298,7 +334,7 @@ int NotificationModel::defaultTimeoutFor(Urgency u) const
 
 bool NotificationModel::isLive(uint id) const
 {
-    if (indexOfDisplayed(id) >= 0) {
+    if (indexOfDisplayed(id) >= 0 || ownerOf(id) != 0) {
         return true;
     }
     for (const Notification &n : m_waiting) {
@@ -326,6 +362,13 @@ bool NotificationModel::hasDefaultAction(uint id) const
     for (const Notification &n : m_waiting) {
         if (n.id == id) {
             return offers(n);
+        }
+    }
+    for (const QList<Notification> &list : m_members) {
+        for (const Notification &m : list) {
+            if (m.id == id) {
+                return offers(m);
+            }
         }
     }
     return false;
@@ -372,6 +415,23 @@ bool NotificationModel::replaceById(const Notification &n)
             m_waiting[i] = updated;
             return true;
         }
+    }
+    /* A member of a group updating itself: in place, where it is. */
+    if (const uint owner = ownerOf(n.id)) {
+        for (Notification &m : m_members[owner]) {
+            if (m.id == n.id) {
+                const QString icon = m.appIcon, sender = m.senderIcon;
+                m = n;
+                if (m.appIcon.isEmpty() && !m.image.isValid()) {
+                    m.appIcon = icon;
+                }
+                if (m.senderIcon.isEmpty()) {
+                    m.senderIcon = sender;
+                }
+            }
+        }
+        groupChanged(owner);
+        return true;
     }
     return false;
 }
@@ -484,33 +544,49 @@ bool NotificationModel::coalesce(const Notification &n)
     auto member = [&key](const Notification &old) {
         return old.groupKey() == key && old.stackTag.isEmpty() && !old.closing;
     };
-    int absorbed = 0;
+    /* Everything of the group so far becomes a member of the new card, and
+       stays live: each absorbed notification keeps its id, actions and reply
+       with its sender, who is not told anything happened. Only the card on
+       screen changes. */
+    QList<Notification> members;
+    auto absorb = [&](const Notification &old) {
+        members << old;
+        members << m_members.take(old.id);
+    };
     QList<uint> onScreen;
     for (const Notification &old : std::as_const(m_displayed)) {
         if (member(old)) {
-            absorbed += old.groupCount;
             onScreen << old.id;
         }
     }
     for (int i = m_waiting.size() - 1; i >= 0; --i) {
-        const Notification &old = m_waiting.at(i);
-        if (!member(old)) {
-            continue;
+        if (member(m_waiting.at(i))) {
+            absorb(m_waiting.takeAt(i));
         }
-        absorbed += old.groupCount;
-        const uint oldId = old.id;
-        m_waiting.removeAt(i);
-        Q_EMIT notificationClosed(oldId, CloseReason::Expired);
+    }
+    for (uint id : std::as_const(onScreen)) {
+        absorb(m_displayed.at(indexOfDisplayed(id)));
+    }
+    /* Newest first. A burst arrives within the same millisecond often
+       enough that the time alone left the order to chance; ids rise with
+       arrival, so they break the tie. */
+    std::sort(members.begin(), members.end(), [](const Notification &a, const Notification &b) {
+        return a.received != b.received ? a.received > b.received : a.id > b.id;
+    });
+    while (members.size() > kMaxMembers) {
+        Q_EMIT notificationClosed(members.takeLast().id, CloseReason::Expired);
     }
 
     Notification merged = n;
-    merged.groupCount = absorbed + 1;
+    merged.groupCount = 1 + int(members.size());
+    m_members.insert(merged.id, members);
 
     /* The group is on screen: its newest card becomes the merged card where it
-       stands, and the rest leave the way any dismissed card does. These used
-       to be deleted outright and the merged card queued afresh, so on screen
-       the old card vanished mid-frame while the new one faded in thirty
-       pixels away and the two overlapped (seen frame by frame). */
+       stands, and the rest leave the screen (their notifications live on as
+       members). These used to be deleted outright and the merged card queued
+       afresh, so on screen the old card vanished mid-frame while the new one
+       faded in thirty pixels away and the two overlapped (seen frame by
+       frame). */
     if (!onScreen.isEmpty()) {
         const uint newest = m_newestFirst ? onScreen.takeFirst() : onScreen.takeLast();
         const int row = indexOfDisplayed(newest);
@@ -523,9 +599,8 @@ bool NotificationModel::coalesce(const Notification &n)
         }
         m_displayed[row] = merged;
         Q_EMIT dataChanged(index(row), index(row));
-        Q_EMIT notificationClosed(newest, CloseReason::Expired);
         for (uint id : std::as_const(onScreen)) {
-            closeId(id, CloseReason::Expired);
+            retireRow(id);
         }
         return true;
     }
@@ -534,6 +609,70 @@ bool NotificationModel::coalesce(const Notification &n)
        keeps one live card rather than re-popping behind whatever else is up. */
     m_waiting.prepend(merged);
     return true;
+}
+
+uint NotificationModel::ownerOf(uint id) const
+{
+    for (auto it = m_members.cbegin(); it != m_members.cend(); ++it) {
+        for (const Notification &m : it.value()) {
+            if (m.id == id) {
+                return it.key();
+            }
+        }
+    }
+    return 0;
+}
+
+void NotificationModel::groupChanged(uint ownerId)
+{
+    const int row = indexOfDisplayed(ownerId);
+    if (row >= 0) {
+        m_displayed[row].groupCount = 1 + int(m_members.value(ownerId).size());
+        Q_EMIT dataChanged(index(row), index(row), {GroupCountRole, MembersRole});
+        return;
+    }
+    for (Notification &w : m_waiting) {
+        if (w.id == ownerId) {
+            w.groupCount = 1 + int(m_members.value(ownerId).size());
+        }
+    }
+}
+
+bool NotificationModel::closeMember(uint id, uint reason)
+{
+    const uint owner = ownerOf(id);
+    if (owner == 0) {
+        return false;
+    }
+    auto it = m_members.find(owner);
+    it->removeIf([id](const Notification &m) { return m.id == id; });
+    if (it->isEmpty()) {
+        m_members.erase(it);
+    }
+    m_hovered.remove(id);
+    Q_EMIT notificationClosed(id, reason);
+    groupChanged(owner);
+    return true;
+}
+
+void NotificationModel::retireRow(uint id)
+{
+    const int row = indexOfDisplayed(id);
+    if (row < 0) {
+        return;
+    }
+    m_hovered.remove(id);
+    if (m_exitMs <= 0) {
+        beginRemoveRows({}, row, row);
+        m_displayed.removeAt(row);
+        endRemoveRows();
+        update();
+        return;
+    }
+    m_displayed[row].closing = true;
+    const QModelIndex ix = index(row, 0);
+    Q_EMIT dataChanged(ix, ix, {ClosingRole});
+    QTimer::singleShot(m_exitMs, this, [this, id] { finishClose(id); });
 }
 
 uint NotificationModel::insert(Notification n)
@@ -636,6 +775,47 @@ uint NotificationModel::insert(Notification n)
 
 bool NotificationModel::closeId(uint id, uint reason)
 {
+    if (closeMember(id, reason)) {
+        return true;
+    }
+
+    /* A group's top card. Withdrawn by its sender (CloseNotification), only
+       that one goes and the newest member takes its place, since the rest
+       are still news. Any other end — it expired, the user dismissed the
+       stack, Clear all — closes the whole group with it, each member's
+       sender told the same reason. */
+    if (m_members.contains(id)) {
+        if (reason == CloseReason::Closed) {
+            QList<Notification> rest = m_members.take(id);
+            Notification next = rest.takeFirst();
+            next.groupCount = 1 + int(rest.size());
+            if (!rest.isEmpty()) {
+                m_members.insert(next.id, rest);
+            }
+            const int at = indexOfDisplayed(id);
+            if (at >= 0) {
+                next.displayedAt = m_displayed.at(at).displayedAt;
+                if (m_hovered.remove(id)) {
+                    m_hovered.insert(next.id);
+                }
+                m_displayed[at] = next;
+                Q_EMIT dataChanged(index(at), index(at));
+            } else {
+                for (Notification &w : m_waiting) {
+                    if (w.id == id) {
+                        w = next;
+                    }
+                }
+            }
+            Q_EMIT notificationClosed(id, reason);
+            return true;
+        }
+        for (const Notification &m : m_members.take(id)) {
+            m_hovered.remove(m.id);
+            Q_EMIT notificationClosed(m.id, reason);
+        }
+    }
+
     const int row = indexOfDisplayed(id);
     if (row >= 0) {
         m_hovered.remove(id);
@@ -681,6 +861,9 @@ int NotificationModel::closeEverything(uint reason)
        in eglSwapBuffers — from pressing Clear all, or opening the centre. */
     const QList<Notification> waiting = std::exchange(m_waiting, {});
     for (const Notification &n : waiting) {
+        for (const Notification &m : m_members.take(n.id)) {
+            Q_EMIT notificationClosed(m.id, reason);
+        }
         Q_EMIT notificationClosed(n.id, reason);
     }
 
@@ -790,13 +973,75 @@ namespace
 constexpr int kActivationTokenWaitMs = 200;
 } // namespace
 
+const Notification *NotificationModel::find(uint id) const
+{
+    const int row = indexOfDisplayed(id);
+    if (row >= 0) {
+        return &m_displayed.at(row);
+    }
+    for (const Notification &n : m_waiting) {
+        if (n.id == id) {
+            return &n;
+        }
+    }
+    for (const QList<Notification> &list : m_members) {
+        for (const Notification &m : list) {
+            if (m.id == id) {
+                return &m;
+            }
+        }
+    }
+    return nullptr;
+}
+
+void NotificationModel::open(QQuickWindow *window, uint id)
+{
+    if (m_screenLocked || !isLive(id)) {
+        return;
+    }
+    /* What a click on a banner means on macOS, every time: open it. The
+       sender's own "default" action when it offers one; otherwise the app
+       it came from, as a click in the centre already did. A click used to
+       dismiss a card with no default action, or expand a stacked one,
+       depending on state nobody could see. */
+    if (hasDefaultAction(id)) {
+        activate(window, id, QStringLiteral("default"));
+        return;
+    }
+    const Notification *n = find(id);
+    const QString entry = n ? n->desktopEntry : QString();
+    if (entry.isEmpty() || !window) {
+        if (!entry.isEmpty()) {
+            Q_EMIT launchRequested(entry, QString());
+        }
+        closeId(id, CloseReason::Dismissed);
+        return;
+    }
+    /* With a token, so the app's window may come to the front. Same bounded
+       wait as activate(). */
+    auto fired = std::make_shared<bool>(false);
+    auto fire = [this, id, entry, fired](const QString &token) {
+        if (*fired) {
+            return;
+        }
+        *fired = true;
+        Q_EMIT launchRequested(entry, token);
+        if (isLive(id)) {
+            closeId(id, CloseReason::Dismissed);
+        }
+    };
+    auto future = KWaylandExtras::xdgActivationToken(window, 0, entry);
+    future.then(this, [fire](const QString &token) { fire(token); });
+    QTimer::singleShot(kActivationTokenWaitMs, this, [fire] { fire(QString()); });
+}
+
 void NotificationModel::activate(QQuickWindow *window, uint id, const QString &key)
 {
     if (m_screenLocked || !isLive(id)) {
         return;   // see data(): acting needs the session unlocked
     }
-    const int row = indexOfDisplayed(id);
-    const QString appId = row >= 0 ? m_displayed.at(row).desktopEntry : QString();
+    const Notification *found = find(id);
+    const QString appId = found ? found->desktopEntry : QString();
 
     if (!window) {
         invokeAction(id, key);
@@ -1126,6 +1371,17 @@ void NotificationModel::dropHiddenForPrivacy()
             const uint id = m_waiting.takeAt(i).id;
             Q_EMIT notificationClosed(id, CloseReason::Expired);
         }
+    }
+    QList<uint> hiddenMembers;
+    for (const QList<Notification> &list : std::as_const(m_members)) {
+        for (const Notification &m : list) {
+            if (effectiveLockPrivacy(m) == Notification::LockPrivacy::Hide) {
+                hiddenMembers << m.id;
+            }
+        }
+    }
+    for (uint id : std::as_const(hiddenMembers)) {
+        closeMember(id, CloseReason::Expired);
     }
     const QList<Notification> shown = m_displayed;
     for (const Notification &n : shown) {

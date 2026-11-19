@@ -772,6 +772,21 @@ void HistoryModel::clearGroup(const QString &key)
     m_saveTimer.start();   // the entries changed; see rebuild()
 }
 
+void HistoryModel::removeIds(const QVariantList &ids)
+{
+    QSet<uint> gone;
+    for (const QVariant &v : ids) {
+        gone.insert(v.toUInt());
+    }
+    const qsizetype before = m_all.size();
+    m_all.removeIf([&gone](const Notification &n) { return gone.contains(n.id); });
+    if (m_all.size() == before) {
+        return;
+    }
+    rebuild();
+    m_saveTimer.start();
+}
+
 void HistoryModel::removeAt(int row)
 {
     if (row < 0 || row >= m_rows.size() || m_rows.at(row).header) {

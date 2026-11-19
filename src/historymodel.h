@@ -117,6 +117,10 @@ public:
     ImageData imageFor(uint id) const;
 
     Q_INVOKABLE void removeAt(int row);
+    /* Remove these notifications (by id) from history: clearing an open
+       group on a popup clears it here too. Ids are unique within a run, and
+       a group on screen is always from this run. */
+    Q_INVOKABLE void removeIds(const QVariantList &ids);
     Q_INVOKABLE void clearAll();
     Q_INVOKABLE void clearFilter() { setGroupFilter({}); }
 

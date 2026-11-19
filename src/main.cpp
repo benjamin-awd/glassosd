@@ -630,11 +630,38 @@ int main(int argc, char *argv[])
            screen its sender is still listening, so the real default action
            works. Once it has expired nobody is listening and invoking the
            action is silently nothing — so fall back to launching the
-           application it came from, which is what the click meant anyway.
-           gio launch runs the .desktop properly (respecting Terminal=,
-           DBusActivatable= and the rest) rather than exec'ing a guess. */
+           application it came from, which is what the click meant anyway. */
+        /* Opening an app from a notification: a centre entry whose
+           notification has gone, or a card with no default action. gio launch
+           runs the .desktop properly (Terminal=, DBusActivatable= and the
+           rest) rather than exec'ing a guess, and an activation token from the
+           click lets the app's window come to the front. */
+        auto launch = [](const QString &desktopEntry, const QString &token) {
+            if (desktopEntry.isEmpty()) {
+                return;
+            }
+            QString file = desktopEntry;
+            if (!file.endsWith(QLatin1String(".desktop"))) {
+                file += QStringLiteral(".desktop");
+            }
+            const QString path = QStandardPaths::locate(QStandardPaths::ApplicationsLocation, file);
+            if (path.isEmpty()) {
+                qInfo("glassosd: no .desktop for '%s'; nothing to open", qUtf8Printable(desktopEntry));
+                return;
+            }
+            QProcess p;
+            p.setProgram(QStringLiteral("gio"));
+            p.setArguments({QStringLiteral("launch"), path});
+            if (!token.isEmpty()) {
+                QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+                env.insert(QStringLiteral("XDG_ACTIVATION_TOKEN"), token);
+                p.setProcessEnvironment(env);
+            }
+            p.startDetached();
+        };
+        QObject::connect(notifications, &NotificationModel::launchRequested, &app, launch);
         QObject::connect(history, &HistoryModel::entryActivated, &app,
-                         [notifications](uint id, const QString &desktopEntry) {
+                         [notifications, launch](uint id, const QString &desktopEntry) {
             /* Only when it offers one. A live notification without a
                default action was sent ActionInvoked("default") anyway, which
                the spec forbids, and closed, while the click went nowhere;
@@ -643,22 +670,7 @@ int main(int argc, char *argv[])
                 notifications->invokeAction(id, QStringLiteral("default"));
                 return;
             }
-            if (desktopEntry.isEmpty()) {
-                return;
-            }
-            QString id2 = desktopEntry;
-            if (!id2.endsWith(QLatin1String(".desktop"))) {
-                id2 += QStringLiteral(".desktop");
-            }
-            const QString path =
-                QStandardPaths::locate(QStandardPaths::ApplicationsLocation, id2);
-            if (path.isEmpty()) {
-                qInfo("glassosd: no .desktop for '%s'; nothing to open",
-                      qUtf8Printable(desktopEntry));
-                return;
-            }
-            QProcess::startDetached(QStringLiteral("gio"),
-                                    {QStringLiteral("launch"), path});
+            launch(desktopEntry, QString());
         });
 
         /* The grid needs live DND state to render its toggle, and something

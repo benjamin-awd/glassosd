@@ -171,6 +171,79 @@ private Q_SLOTS:
 
     /* The expiry tick sleeps when there is nothing for it to do: nothing on
        screen that can expire and no burst inside the coalescing window. */
+    /* A coalesced group's earlier notifications stay live: their senders
+       are not told anything, each can be acted on or closed alone, and the
+       group's end closes them with it. */
+    void groupMembersStayLive()
+    {
+        NotificationModel m;
+        m.setCoalesce(3, 20000);
+        m.setTimeouts(0, 0, 0);
+        QSignalSpy closed(&m, &NotificationModel::notificationClosed);
+        for (uint id = 101; id <= 103; ++id) {
+            Notification n = note(QStringLiteral("Mail"), QStringLiteral("m%1").arg(id), {}, id);
+            n.actions = {QStringLiteral("default"), QString()};
+            m.insert(n);
+        }
+        QCOMPARE(m.liveCount(), 1);
+        QCOMPARE(closed.size(), 0);                  // nobody told anything closed
+        QVERIFY(m.isLive(101) && m.isLive(102) && m.isLive(103));
+        QCOMPARE(m.index(0).data(NotificationModel::GroupCountRole).toInt(), 3);
+        const QVariantList members = m.index(0).data(NotificationModel::MembersRole).toList();
+        QCOMPARE(members.size(), 2);
+        QCOMPARE(members.first().toMap().value(QStringLiteral("id")).toUInt(), 102u);   // newest first
+
+        QSignalSpy actions(&m, &NotificationModel::actionInvoked);
+        m.invokeAction(101, QStringLiteral("default"));
+        QCOMPARE(actions.size(), 1);
+        QCOMPARE(actions.first().at(0).toUInt(), 101u);
+        QCOMPARE(m.index(0).data(NotificationModel::GroupCountRole).toInt(), 2);
+
+        /* A member updating itself is updated in place. */
+        m.insert(note(QStringLiteral("Mail"), QStringLiteral("edited"), {}, 102));
+        QCOMPARE(m.index(0).data(NotificationModel::MembersRole).toList().first().toMap()
+                     .value(QStringLiteral("summary")).toString(), QStringLiteral("edited"));
+
+        closed.clear();
+        m.dismiss(103);                              // the stack: all of it
+        QCOMPARE(closed.size(), 2);
+        QVERIFY(!m.isLive(102));
+    }
+
+    /* The sender withdrawing the top card closes only it: the newest member
+       takes its place. */
+    void withdrawingTheTopCardPromotesAMember()
+    {
+        NotificationModel m;
+        m.setCoalesce(3, 20000);
+        m.setTimeouts(0, 0, 0);
+        for (uint id = 201; id <= 203; ++id) {
+            m.insert(note(QStringLiteral("Chat"), QStringLiteral("c%1").arg(id), {}, id));
+        }
+        QSignalSpy closed(&m, &NotificationModel::notificationClosed);
+        m.closeId(203, CloseReason::Closed);
+        QCOMPARE(closed.size(), 1);
+        QCOMPARE(m.liveCount(), 1);
+        QCOMPARE(m.index(0).data(NotificationModel::IdRole).toUInt(), 202u);
+        QCOMPARE(m.index(0).data(NotificationModel::GroupCountRole).toInt(), 2);
+    }
+
+    /* While locked, a member that asks to be hidden goes, as a card would. */
+    void aHiddenMemberIsDroppedWhenLocked()
+    {
+        NotificationModel m;
+        m.setCoalesce(3, 20000);
+        m.setTimeouts(0, 0, 0);
+        Notification secret = note(QStringLiteral("Chat"), QStringLiteral("secret"), {}, 301);
+        secret.lockPrivacy = Notification::LockPrivacy::Hide;
+        m.insert(secret);
+        m.insert(note(QStringLiteral("Chat"), QStringLiteral("b"), {}, 302));
+        m.insert(note(QStringLiteral("Chat"), QStringLiteral("c"), {}, 303));
+        m.setScreenLocked(true);
+        QVERIFY(!m.isLive(301));
+        QCOMPARE(m.index(0).data(NotificationModel::GroupCountRole).toInt(), 2);
+    }
+
     /* A card that stays up is told the time has moved on. */
     void theAgeTickRunsWhileCardsAreShown()
     {
