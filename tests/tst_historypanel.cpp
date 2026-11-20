@@ -200,6 +200,29 @@ private Q_SLOTS:
         QCOMPARE(m_model->rowCount(), 4);
     }
 
+    /* The first card's close button hangs above its top edge, into the
+       list's topMargin. positionViewAtBeginning stops at contentY 0, short of
+       that margin, so the centre opened with the button half scrolled away. */
+    void opensWithRoomForTheFirstCardsCloseButton()
+    {
+        /* Only a list that scrolls: a short one has nowhere else to sit. */
+        m_model->setPanelOpen(false);
+        QTRY_VERIFY(!m_win->isVisible());
+        for (uint i = 10; i < 40; ++i) {
+            m_model->record(note(i, QStringLiteral("App %1").arg(i), QStringLiteral("entry")));
+        }
+        open();
+        QQuickItem *l = list();
+        QVERIFY(l->property("contentHeight").toReal() > l->height());
+        const qreal margin = l->property("topMargin").toReal();
+        QVERIFY(margin > 0);
+        QTest::qWait(100);   // past the settle timer's second jump
+        QCOMPARE(l->property("contentY").toReal(), l->property("originY").toReal() - margin);
+        key(Qt::Key_Down);
+        QCOMPARE(cursor(), 0);
+        QCOMPARE(l->property("contentY").toReal(), l->property("originY").toReal() - margin);
+    }
+
     void escClearsSearchThenCloses()
     {
         type(QStringLiteral("xyz"));

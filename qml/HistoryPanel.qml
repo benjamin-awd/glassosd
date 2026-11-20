@@ -730,9 +730,25 @@ Window {
                            have been sized, so it lands short on a long list; the
                            Timer re-runs it once layout has settled. */
                         function jumpToNewest() {
-                            if (HistoryModel.newestFirst) positionViewAtBeginning()
-                            else positionViewAtEnd()
+                            if (HistoryModel.newestFirst) {
+                                positionViewAtBeginning()
+                                contentY = topY
+                            } else {
+                                positionViewAtEnd()
+                            }
                         }
+
+                        /* The real ends of the scroll range. ListView's own
+                           positioning (positionViewAtBeginning, and
+                           positionViewAtIndex for row 0) stops at contentY 0,
+                           which is short of the top by topMargin: the room
+                           left for the first card's close button, so that
+                           button opened half scrolled out of view. Everything
+                           that scrolls or reports the scroll position goes by
+                           these instead. */
+                        readonly property real topY: originY - topMargin
+                        readonly property real bottomY: Math.max(topY,
+                            originY + contentHeight + bottomMargin - height)
                         Timer {
                             id: settle
                             interval: 30; repeat: false
@@ -793,6 +809,12 @@ Window {
                                into view. */
                             scrollAnim.stop()
                             positionViewAtIndex(row, ListView.Contain)
+                            /* Contain brings the row's top edge to the
+                               view's, and the keyboard's row shows its
+                               close button, which hangs above that edge. */
+                            const item = itemAtIndex(row)
+                            if (item && item.y - topMargin < contentY)
+                                contentY = Math.max(topY, item.y - topMargin)
                         }
 
                         /* From the search field into the list. False when
@@ -1063,12 +1085,11 @@ Window {
                             property real notch: 180   // px per detent, ~3 entries
 
                             onWheel: (event) => {
-                                const maxY = Math.max(0, list.contentHeight - list.height)
-                                if (maxY <= 0)
+                                if (list.bottomY <= list.topY)
                                     return
                                 const from = scrollAnim.running ? scrollAnim.to : list.contentY
                                 const delta = event.angleDelta.y / 120 * wheel.notch
-                                scrollAnim.to = Math.max(0, Math.min(maxY, from - delta))
+                                scrollAnim.to = Math.max(list.topY, Math.min(list.bottomY, from - delta))
                                 scrollAnim.restart()
                             }
                         }
@@ -1089,7 +1110,7 @@ Window {
                             width: 4
                             radius: 2
                             color: Style.foregroundDim
-                            visible: list.contentHeight > list.height
+                            visible: list.bottomY > list.topY
                             opacity: list.moving || scrollAnim.running ? 0.70 : 0.34
                             Behavior on opacity { NumberAnimation { duration: 250 } }
 
@@ -1098,8 +1119,8 @@ Window {
                                Flickable is parented to its contentItem, not to the
                                view — without this the indicator scrolls away with
                                the entries it is supposed to be tracking. */
-                            y: list.contentY + (list.contentHeight <= list.height ? 0
-                               : (list.contentY / (list.contentHeight - list.height))
+                            y: list.contentY + (list.bottomY <= list.topY ? 0
+                               : ((list.contentY - list.topY) / (list.bottomY - list.topY))
                                  * (list.height - height))
                         }
 
@@ -1122,7 +1143,7 @@ Window {
                             width: list.width
                             height: Style.px(22)
                             y: list.contentY
-                            visible: list.contentY > 1
+                            visible: list.contentY - list.topY > 1
                             opacity: visible ? 1 : 0
                             Behavior on opacity { NumberAnimation { duration: 140 } }
                             gradient: Gradient {
@@ -1136,7 +1157,7 @@ Window {
                             width: list.width
                             height: Style.px(22)
                             y: list.contentY + list.height - height
-                            visible: list.contentHeight - list.contentY - list.height > 1
+                            visible: list.bottomY - list.contentY > 1
                             opacity: visible ? 1 : 0
                             Behavior on opacity { NumberAnimation { duration: 140 } }
                             gradient: Gradient {
