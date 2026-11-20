@@ -52,6 +52,17 @@ Appearance::Appearance(QObject *parent)
     reload();
 }
 
+void Appearance::setCentreCards(bool on)
+{
+    if (on == m_centreCards) {
+        return;
+    }
+    KConfigGroup(m_config, QStringLiteral("Appearance"))
+        .writeEntry("CentreStyle", on ? QStringLiteral("cards") : QStringLiteral("list"));
+    m_config->sync();
+    reload();
+}
+
 void Appearance::reload()
 {
     m_config->reparseConfiguration();

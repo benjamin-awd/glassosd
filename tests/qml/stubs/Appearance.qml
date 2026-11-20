@@ -27,5 +27,6 @@ QtObject {
     property int centreSide: 8             // Right
     property int centreBodyLines: 3
     property bool centreCards: true
+    function setCentreCards(on) { centreCards = on }
     property var widgets: ["title", "search", "notifications"]
 }

@@ -146,6 +146,10 @@ public:
     bool osdPercent() const { return m_osdPercent; }
     Q_INVOKABLE bool hasWidget(const QString &name) const { return m_widgets.contains(name); }
     Q_INVOKABLE int widgetOrder(const QString &name) const { return m_widgets.indexOf(name); }
+    /* The centre's own switch between its two styles: written to
+       [Appearance] CentreStyle, so the choice outlives a restart, and
+       applied at once. */
+    Q_INVOKABLE void setCentreCards(bool on);
 
     void reload();
 

@@ -225,6 +225,15 @@ Window {
                     onActivated: HistoryModel.clearFilter()
                 }
 
+                /* Between the two centres, cards and stacks or the earlier
+                   list, without going to a terminal. Saved to glassosdrc
+                   (CentreStyle), the same key glassosdctl centre-style
+                   writes. */
+                PanelButton {
+                    label: Appearance.centreCards ? "List view" : "Card view"
+                    onActivated: Appearance.setCentreCards(!Appearance.centreCards)
+                }
+
                 PanelButton {
                     label: "Clear"
                     enabled: HistoryModel.total > 0

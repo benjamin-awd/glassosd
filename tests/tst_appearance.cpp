@@ -12,6 +12,7 @@
 #include <KConfigGroup>
 #include <KSharedConfig>
 #include <QTemporaryDir>
+#include <QSignalSpy>
 #include <QtTest>
 
 class TestAppearance : public QObject
@@ -67,6 +68,21 @@ private Q_SLOTS:
         write(QStringLiteral("CentreStyle"), QStringLiteral("typo"));
         Appearance a;
         QVERIFY(a.centreCards());   // anything but "list" is the default
+    }
+
+    /* The centre's own switch saves the choice and applies it at once. */
+    void theSwitchIsSavedAndApplied()
+    {
+        write(QStringLiteral("CentreStyle"), QStringLiteral("cards"));
+        Appearance a;
+        QSignalSpy changed(&a, &Appearance::changed);
+        a.setCentreCards(false);
+        QVERIFY(!a.centreCards());
+        QCOMPARE(changed.size(), 1);
+        Appearance fresh;            // what the next start reads
+        QVERIFY(!fresh.centreCards());
+        a.setCentreCards(true);
+        QVERIFY(Appearance().centreCards());
     }
 };
 

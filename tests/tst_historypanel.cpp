@@ -431,6 +431,33 @@ private Q_SLOTS:
         appearance->setProperty("centreCards", true);
     }
 
+    /* The title row's button switches between the two centres. */
+    void theTitleButtonSwitchesTheCentre()
+    {
+        auto button = [this](const QString &label) -> QQuickItem * {
+            QQuickItem *found = nullptr;
+            std::function<void(QQuickItem *)> walk = [&](QQuickItem *it) {
+                for (QQuickItem *c : it->childItems()) {
+                    if (!found && c->isVisible() && c->property("label").toString() == label) {
+                        found = c;
+                    }
+                    walk(c);
+                }
+            };
+            walk(m_win->contentItem());
+            return found;
+        };
+        QObject *appearance = m_engine->singletonInstance<QObject *>("org.glassosd.ui", "Appearance");
+        QTRY_VERIFY(button(QStringLiteral("List view")));
+        QQuickItem *b = button(QStringLiteral("List view"));
+        const QPoint at = b->mapToScene(QPointF(b->width() / 2, b->height() / 2)).toPoint();
+        QTest::mouseMove(m_win, at);
+        QTest::mouseClick(m_win, Qt::LeftButton, Qt::NoModifier, at);
+        QVERIFY(!appearance->property("centreCards").toBool());
+        QTRY_VERIFY(button(QStringLiteral("Card view")));
+        appearance->setProperty("centreCards", true);
+    }
+
     void returnOnHeaderTogglesTheGroup()
     {
         key(Qt::Key_Down);
