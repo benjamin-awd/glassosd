@@ -155,7 +155,8 @@ private Q_SLOTS:
         QVERIFY2(!m_engine->rootObjects().isEmpty(), qPrintable(m_warnings.join(u'\n')));
         m_win = qobject_cast<QQuickWindow *>(m_engine->rootObjects().constFirst());
         QVERIFY(m_win);
-        setTheme({{QStringLiteral("motion.in"), 120}, {QStringLiteral("motion.out"), 80}});
+        setTheme({{QStringLiteral("motion.in"), 120}, {QStringLiteral("motion.out"), 80},
+                  {QStringLiteral("motion.swipeSpring"), 60}});
     }
 
     void cleanup()
@@ -262,7 +263,10 @@ private Q_SLOTS:
             }
         }, Qt::DirectConnection);
         m_model->dismiss(m_model->index(0).data(NotificationModel::IdRole).toUInt());
-        QTest::qWait(600);
+        /* Through the row's removal, where the jump was, and a few frames on. */
+        QTRY_COMPARE_WITH_TIMEOUT(m_model->rowCount(), 2, 2000);
+        waitSettled();
+        QTest::qWait(50);
         disconnect(conn);
         QVERIFY(ys.size() > 5);
         qreal worst = 0;
@@ -299,7 +303,9 @@ private Q_SLOTS:
         m_model->dismiss(m_model->index(1).data(NotificationModel::IdRole).toUInt());
         QTest::qWait(20);
         m_model->insert(note(QStringLiteral("arriving")));
-        QTest::qWait(700);
+        QTRY_COMPARE_WITH_TIMEOUT(m_model->rowCount(), 2, 2000);
+        waitSettled();
+        QTest::qWait(50);
         disconnect(conn);
         QVERIFY(ys.size() > 5);
         qreal worst = 0;
@@ -371,7 +377,7 @@ private Q_SLOTS:
         m_model->insert(note(QStringLiteral("c")));
         QTest::qWait(50);
         m_model->dismiss(m_model->index(m_model->rowCount() - 1).data(NotificationModel::IdRole).toUInt());
-        QTest::qWait(500);
+        QTest::qWait(250);   // the pill's show delay (motion.in) twice over
         disconnect(conn);
         QVERIFY2(!everShown, "Clear all flashed up for a momentary third card");
     }
@@ -390,7 +396,7 @@ private Q_SLOTS:
     {
         QFETCH(qreal, velocity);
         setTheme({{QStringLiteral("motion.in"), 120}, {QStringLiteral("motion.out"), 250},
-                  {QStringLiteral("motion.slideTravel"), 362}});
+                  {QStringLiteral("motion.slideTravel"), 362}, {QStringLiteral("motion.swipeSpring"), 60}});
         m_model->setExitMs(250);
         m_model->insert(note(QStringLiteral("swiped")));
         QTRY_COMPARE(cards().size(), 1);
@@ -473,7 +479,7 @@ private Q_SLOTS:
             QTest::qWait(50);
         }
         wheel(0, Qt::ScrollEnd);
-        QTest::qWait(400);
+        QTRY_COMPARE_WITH_TIMEOUT(cards().constFirst()->property("swipeX").toReal(), 0.0, 2000);
         QCOMPARE(cards().size(), 1);
         QCOMPARE(m_model->rowCount(), 1);
     }
@@ -510,7 +516,7 @@ private Q_SLOTS:
         QTest::mouseMove(m_win, (r.topLeft() + QPointF(3, 3)).toPoint());
         QTest::qWait(20);
         QTest::mouseMove(m_win, (r.topLeft() - QPointF(5, 5)).toPoint());
-        QTest::qWait(400);   // past the grace period: its own hover holds it now
+        QTest::qWait(300);   // past the 250 ms grace period: its own hover holds it now
         QCOMPARE(surface->property("inputHolders").toList().size(), 1);
         QTest::mouseClick(m_win, Qt::LeftButton, Qt::NoModifier, (r.topLeft() - QPointF(5, 5)).toPoint());
         QTRY_COMPARE_WITH_TIMEOUT(m_model->rowCount(), 0, 2000);
@@ -638,16 +644,17 @@ private Q_SLOTS:
        link kept theirs, a lit slab of glass with no card in it. */
     void aFadingOpenGroupDropsAllItsRegions()
     {
-        /* Dropped early in a long exit, so the card is still there to be
-           checked against. */
-        setTheme({{QStringLiteral("motion.in"), 120}, {QStringLiteral("motion.out"), 2000},
-                  {QStringLiteral("motion.slideTravel"), 0},
-                  {QStringLiteral("motion.blurDropAt"), 0.95}});
-        m_model->setExitMs(2000);
         QQuickItem *card = groupOf(8, QStringLiteral("Fade"));
         QVERIFY(card);
         card->setProperty("groupOpen", true);
         QTRY_COMPARE(card->property("groupProgress").toReal(), 1.0);
+        /* Dropped early in a long exit, so the card is still there to be
+           checked against. Set only now: the cards that coalesced into the
+           group would otherwise take the long exit too. */
+        setTheme({{QStringLiteral("motion.in"), 120}, {QStringLiteral("motion.out"), 1000},
+                  {QStringLiteral("motion.slideTravel"), 0},
+                  {QStringLiteral("motion.blurDropAt"), 0.99}});
+        m_model->setExitMs(1000);
         QTest::qWait(50);
         QVERIFY(holders() > 3);
         m_model->dismiss(card->property("shownId").toUInt());
@@ -936,9 +943,9 @@ private Q_SLOTS:
             }
             m_model->insert(x);
         }
-        if (cards().size() != 1) {
-            QTest::qWait(500);
-        }
+        /* The first few arrive as cards of their own before they coalesce;
+           wait for those to leave rather than for a fixed time. */
+        QTest::qWaitFor([this] { return cards().size() == 1; }, 3000);
         waitSettled();
         return cards().value(0);
     }
