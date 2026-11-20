@@ -937,7 +937,7 @@ Item {
                     width: isSymbolic ? Style.notifyIconSize
                                       : Style.notifyAppIcon
                     height: width
-                    source: root.entry.iconSource
+                    source: Icons.themed(root.entry.iconSource, Style.foreground)
                     /* Rasterised at the drawn size, not the box token, so an
                        SVG theme icon is never rendered small and scaled up. */
                     sourceSize: Qt.size(width * Screen.devicePixelRatio,

@@ -87,6 +87,7 @@ qt_add_qml_module(glassosd
         qml/CardActions.qml
         qml/SliderRow.qml
         qml/ButtonsGrid.qml
+        qml/Glyph.qml
     RESOURCES
         qml/icons/volume-muted.svg
         qml/icons/volume-low.svg

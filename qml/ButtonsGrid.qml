@@ -84,7 +84,7 @@ Item {
                     anchors.centerIn: parent
                     spacing: cell.showsLabel ? Style.px(8) : 0
 
-                    Image {
+                    Glyph {
                         id: glyph
                         anchors.verticalCenter: parent.verticalCenter
                         visible: cell.iconName !== ""
@@ -94,7 +94,7 @@ Item {
                         /* Logical size; Qt applies the device pixel ratio. */
                         sourceSize.width: width
                         sourceSize.height: height
-                        smooth: true
+                        tint: cell.active ? "#ffffff" : Style.foreground
                     }
 
                     Text {

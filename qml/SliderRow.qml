@@ -36,7 +36,7 @@ Item {
             radius: width * Style.chipRadiusRatio
             color: iconArea.containsMouse ? Style.controlFillHover : "transparent"
 
-            Image {
+            Glyph {
                 anchors.centerIn: parent
                 width: Style.px(17)
                 height: Style.px(17)
@@ -45,7 +45,6 @@ Item {
                 /* Logical size; Qt applies the device pixel ratio. */
                 sourceSize.width: width
                 sourceSize.height: height
-                smooth: true
             }
 
             MouseArea {

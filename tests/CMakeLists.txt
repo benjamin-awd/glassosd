@@ -136,7 +136,7 @@ set(GLASSOSD_QML_TEST_MODULE ${CMAKE_CURRENT_BINARY_DIR}/qmlimports/org/glassosd
 set(GLASSOSD_QML_UNDER_TEST
     NotificationStack.qml NotificationCard.qml GlassPanel.qml CardButton.qml
     CardStackSurface.qml MemberCard.qml CardMenu.qml CardReply.qml CardActions.qml
-    Style.qml Icons.qml)
+    Glyph.qml Style.qml Icons.qml)
 set(_qml_copy_cmds)
 foreach(f IN LISTS GLASSOSD_QML_UNDER_TEST)
     list(APPEND _qml_copy_cmds COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -172,7 +172,7 @@ set(GLASSOSD_CENTRE_TEST_MODULE ${CMAKE_CURRENT_BINARY_DIR}/qmlimports-centre/or
 set(GLASSOSD_CENTRE_QML_UNDER_TEST
     HistoryPanel.qml CentreCard.qml CentreGroupHeader.qml GlassPanel.qml CardButton.qml
     PanelButton.qml Toggle.qml
-    SliderRow.qml ButtonsGrid.qml Style.qml Icons.qml)
+    SliderRow.qml ButtonsGrid.qml Glyph.qml Style.qml Icons.qml)
 set(_centre_copy_cmds)
 foreach(f IN LISTS GLASSOSD_CENTRE_QML_UNDER_TEST)
     list(APPEND _centre_copy_cmds COMMAND ${CMAKE_COMMAND} -E copy_if_different

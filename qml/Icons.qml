@@ -200,4 +200,18 @@ QtObject {
         }
         return Qt.resolvedUrl(custom[mine])
     }
+
+    /* An icon-theme URL with the surface's foreground attached, so the
+       provider can repaint it if it turns out to be a one-colour glyph (see
+       IconProvider::requestPixmap). Anything else — our own glyphs, a
+       notification's picture, an empty source — is returned unchanged:
+       ours are tinted by Glyph, and pictures are never touched. */
+    function themed(src, color) {
+        const s = String(src || "")
+        if (!s.startsWith("image://icon/"))
+            return s
+        const c = Qt.color(color)
+        const hex = n => ("0" + Math.round(n * 255).toString(16)).slice(-2)
+        return s + "?fg=" + hex(c.r) + hex(c.g) + hex(c.b)
+    }
 }

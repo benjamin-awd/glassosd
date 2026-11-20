@@ -348,7 +348,7 @@ Window {
                             smooth: true
                         }
 
-                        Image {
+                        Glyph {
                             anchors.centerIn: parent
                             width: 22
                             height: 22
@@ -360,7 +360,6 @@ Window {
                                fill the item, which on any display above 1x is
                                visibly soft. 3x matches the rest. */
                             sourceSize: Qt.size(66, 66)
-                            smooth: true
                             visible: MprisController.artUrl === ""
                             opacity: 0.6
                         }
@@ -444,12 +443,11 @@ Window {
                     anchors.rightMargin: 12
                     spacing: 10
 
-                    Image {
+                    Glyph {
                         Layout.preferredWidth: 18
                         Layout.preferredHeight: 18
                         source: Icons.source("dnd")
                         sourceSize: Qt.size(54, 54)
-                        smooth: true
                         opacity: NotificationModel.doNotDisturb ? 1.0 : 0.55
                     }
 
@@ -1276,7 +1274,7 @@ Window {
                                                 Layout.preferredWidth: 16
                                                 Layout.preferredHeight: 16
                                                 visible: model.headerIcon !== ""
-                                                source: model.headerIcon
+                                                source: Icons.themed(model.headerIcon, Style.foregroundMuted)
                                                 sourceSize: Qt.size(48, 48)
                                                 fillMode: Image.PreserveAspectFit
                                                 smooth: true
@@ -1402,7 +1400,7 @@ Window {
                                                 Layout.preferredHeight: Style.notifyIconSize - 4
                                                 Layout.alignment: Qt.AlignTop
                                                 visible: model.iconSource !== ""
-                                                source: model.iconSource
+                                                source: Icons.themed(model.iconSource, Style.foreground)
                                                 sourceSize: Qt.size(78, 78)
                                                 fillMode: Image.PreserveAspectFit
                                                 smooth: true

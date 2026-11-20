@@ -14,6 +14,7 @@
 */
 #pragma once
 
+#include <QColor>
 #include <QDir>
 #include <QFileInfo>
 #include <QIcon>
@@ -30,7 +31,79 @@ public:
     {
     }
 
+    /* "<name or path>?fg=RRGGBB": recolour the icon to that colour if it
+       turns out to be a single flat colour.
+
+       The icon theme is the desktop's, not ours, and the two need not agree
+       on light and dark. With breeze-dark as the desktop theme every Breeze
+       monochrome icon (mail-message, the envelope Thunderbird sends) is drawn
+       near-white, and on a light glassosd card it vanished: white on white.
+       The mirror case — Breeze light under a dark glassosd — painted a dark
+       glyph on a dark card. Neither name says "symbolic", so the QML cannot
+       know to tint it; only the pixels say so.
+
+       So the decision is made here, on what was actually loaded. Artwork has
+       more than one colour and is returned untouched; a glyph has one, and is
+       repainted in the colour the surface asked for. The colour is part of
+       the URL, so a theme change is a new URL and the image cache cannot hand
+       back the old tint. */
     QPixmap requestPixmap(const QString &id, QSize *size, const QSize &requested) override
+    {
+        const qsizetype mark = id.lastIndexOf(QLatin1String("?fg="));
+        if (mark < 0) {
+            return resolve(id, size, requested);
+        }
+        const QColor fg(QLatin1Char('#') + id.mid(mark + 4));
+        QPixmap pm = resolve(id.left(mark), size, requested);
+        if (!fg.isValid() || pm.isNull()) {
+            return pm;
+        }
+        QImage img = pm.toImage().convertToFormat(QImage::Format_ARGB32);
+        if (!isFlatColour(img)) {
+            return pm;
+        }
+        const QRgb rgb = fg.rgb() & 0x00ffffff;
+        for (int y = 0; y < img.height(); ++y) {
+            auto *line = reinterpret_cast<QRgb *>(img.scanLine(y));
+            for (int x = 0; x < img.width(); ++x) {
+                line[x] = (line[x] & 0xff000000) | rgb;
+            }
+        }
+        QPixmap out = QPixmap::fromImage(img);
+        out.setDevicePixelRatio(pm.devicePixelRatio());
+        return out;
+    }
+
+    /* One colour, give or take antialiasing: every pixel that is more than
+       faintly visible lies within a small box in RGB. A full-colour icon
+       fails at once; so does a monochrome glyph with an accent (a blue
+       unread dot), which is then shown as drawn rather than flattened. */
+    static bool isFlatColour(const QImage &img)
+    {
+        int lo[3] = {255, 255, 255};
+        int hi[3] = {0, 0, 0};
+        bool any = false;
+        for (int y = 0; y < img.height(); ++y) {
+            const auto *line = reinterpret_cast<const QRgb *>(img.constScanLine(y));
+            for (int x = 0; x < img.width(); ++x) {
+                const QRgb p = line[x];
+                if (qAlpha(p) < 96) {
+                    continue;
+                }
+                any = true;
+                const int c[3] = {qRed(p), qGreen(p), qBlue(p)};
+                for (int i = 0; i < 3; ++i) {
+                    lo[i] = qMin(lo[i], c[i]);
+                    hi[i] = qMax(hi[i], c[i]);
+                }
+            }
+        }
+        constexpr int spread = 40;
+        return any && hi[0] - lo[0] <= spread && hi[1] - lo[1] <= spread && hi[2] - lo[2] <= spread;
+    }
+
+private:
+    QPixmap resolve(const QString &id, QSize *size, const QSize &requested)
     {
         /* Every step of the chain, because each one has been the answer at
            least once and a missing icon is silent otherwise.

@@ -91,14 +91,14 @@ Item {
                     anchors.centerIn: parent
                     width: isSymbolic ? Style.notifyIconSize : Style.notifyAppIcon
                     height: width
-                    source: root.entry.iconSource || ""
+                    source: Icons.themed(root.entry.iconSource, Style.foreground)
                     sourceSize: Qt.size(width * Screen.devicePixelRatio,
                                         width * Screen.devicePixelRatio)
                     fillMode: Image.PreserveAspectFit
                     smooth: true
                     mipmap: true
                     readonly property bool isSymbolic:
-                        Icons.isCustom(String(source)) || String(source).indexOf("symbolic") !== -1
+                        Icons.isCustom(String(root.entry.iconSource || "")) || String(root.entry.iconSource || "").indexOf("symbolic") !== -1
                 }
             }
 

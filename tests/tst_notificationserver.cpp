@@ -592,6 +592,48 @@ private Q_SLOTS:
             QCOMPARE(QColor(pm.toImage().pixel(16, 16)).green(), 200);
         }
     }
+
+    /* The light-theme bug: breeze-dark's monochrome icons are white, and a
+       white envelope on a light card is invisible. A one-colour icon asked
+       for with ?fg= comes back in that colour, keeping its shape (alpha);
+       anything with more than one colour comes back exactly as drawn. */
+    void iconProviderTintsOnlyFlatIcons()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+
+        const QString glyph = dir.filePath(QStringLiteral("glyph.png"));
+        QImage g(32, 32, QImage::Format_ARGB32);
+        g.fill(Qt::transparent);
+        for (int x = 4; x < 28; ++x) {
+            g.setPixel(x, 16, qRgba(252, 252, 252, 255));    // breeze-dark's white
+            g.setPixel(x, 17, qRgba(252, 252, 252, 128));    // an antialiased edge
+        }
+        QVERIFY(g.save(glyph));
+
+        const QString art = dir.filePath(QStringLiteral("art.png"));
+        QImage a(32, 32, QImage::Format_ARGB32);
+        a.fill(QColor(10, 200, 30));
+        for (int x = 0; x < 32; ++x) {
+            a.setPixel(x, 0, qRgb(250, 20, 20));
+        }
+        QVERIFY(a.save(art));
+
+        IconProvider provider;
+        const QImage tinted = provider.requestPixmap(glyph + QStringLiteral("?fg=16181c"), nullptr, QSize(32, 32))
+                                  .toImage().convertToFormat(QImage::Format_ARGB32);
+        QCOMPARE(tinted.pixel(10, 16), qRgba(0x16, 0x18, 0x1c, 255));
+        QCOMPARE(qAlpha(tinted.pixel(10, 17)), 128);
+        QCOMPARE(qAlpha(tinted.pixel(10, 2)), 0);
+
+        const QImage kept = provider.requestPixmap(art + QStringLiteral("?fg=16181c"), nullptr, QSize(32, 32)).toImage();
+        QCOMPARE(QColor(kept.pixel(16, 16)).green(), 200);
+        QCOMPARE(QColor(kept.pixel(16, 0)).red(), 250);
+
+        /* No hint, no change: the OSD and everything else that never asks. */
+        const QImage plain = provider.requestPixmap(glyph, nullptr, QSize(32, 32)).toImage();
+        QCOMPARE(qRed(plain.pixel(10, 16)), 252);
+    }
 };
 
 GLASSOSD_TEST_MAIN(TestNotificationServer)
