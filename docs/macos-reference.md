@@ -72,6 +72,13 @@ mode, walk the nodes with `use_figma` (read-only).
   - Title and body `#1A1A1A` LINEAR_BURN.
   - Timestamp `#BFBFBF` LINEAR_BURN.
 
+## Screenshots are not kit values
+
+Check a screenshot's date before using it. A July 2025 macOS dark banner
+screenshot is macOS 26 Tahoe, not 27. Its brighter all-round rim (white ~0.16)
+and timestamp (white ~0.75) were not adopted, because the 27 kit lights only the
+top and bottom rims and sets the timestamp at +25%.
+
 ## How the themes translate this
 
 - **Luminosity and lighten layers.** KWin has no blend modes for a client
@@ -79,7 +86,8 @@ mode, walk the nodes with `use_figma` (read-only).
   backdrop luminance into that range. Only the NORMAL tint becomes
   `card.background`.
   - Dark: the kit implies 0.7·L + 0.06, a range of [6, 76]. The theme
-    deliberately caps it at **[6, 45]**. At 76, white text over a white window
+    uses **[9, 50]**. Over a dark app (#191D20) both give a fill of about
+    #22, which a real macOS dark banner also shows. At 76, white text over a white window
     went grey-on-grey. Apple's glass flips darker over bright content and its
     text is additive (LINEAR_DODGE); neither can be done here.
   - Light: about [29, 100], plus `card.background` white at 0.08.
