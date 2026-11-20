@@ -4,6 +4,7 @@
     SPDX-License-Identifier: GPL-2.0-or-later
 */
 #include "historymodel.h"
+#include "desktopentry.h"
 
 #include "jsonstore.h"
 
@@ -255,7 +256,7 @@ QString HistoryModel::iconSourceFor(const Notification &n)
     if (n.image.isValid()) {
         return QStringLiteral("image://notifyimage/h%1").arg(n.id);
     }
-    return n.appIcon.isEmpty() ? QString() : QStringLiteral("image://icon/") + n.appIcon;
+    return notificationIconUrl(n.appIcon, n.desktopEntry);
 }
 
 QVariant HistoryModel::maskedForSharing(const Notification &n, int role) const

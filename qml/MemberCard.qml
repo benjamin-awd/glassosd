@@ -122,6 +122,7 @@ Item {
                                                                : Style.notifyFontSize
                         lineHeightMode: Style.notifyLinePx > 0 ? Text.FixedHeight : Text.ProportionalHeight
                         lineHeight: Style.notifyLinePx > 0 ? Style.notifyLinePx : 1.0
+                        font.letterSpacing: Style.notifyTitleSpacing
                         font.bold: true
                         wrapMode: Text.WordWrap
                         maximumLineCount: Style.notifyTitleLines
@@ -150,6 +151,7 @@ Item {
                                                            : Style.notifyFontSize - 1
                     lineHeightMode: Style.notifyLinePx > 0 ? Text.FixedHeight : Text.ProportionalHeight
                     lineHeight: Style.notifyLinePx > 0 ? Style.notifyLinePx : 1.0
+                    font.letterSpacing: Style.notifyBodySpacing
                     wrapMode: Text.WordWrap
                     maximumLineCount: Appearance.bodyLines
                     elide: Text.ElideRight

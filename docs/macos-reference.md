@@ -99,7 +99,18 @@ top and bottom rims and sets the timestamp at +25%.
 - **Motion.** The kit has no animation data. The theme's curves come from a 60 fps
   recording: 400 ms in, `0.35,0.85,0.35,1`; 250 ms out, `0.15,0.05,0.30,1`.
 - **Font.** It stays Inter, because SF Pro is not licensed for use off Apple
-  platforms.
+  platforms. The kit's tracking is kept: `font.notifyTitleTracking` −0.02 and
+  `font.notifyBodyTracking` −0.008 (em). Inter is wider than SF Pro, so
+  without them lines wrap where macOS's would not.
+- **App icons.** A macOS banner always shows the sending app's icon. Linux
+  apps often send a monochrome theme glyph instead (`mail-message`, a calendar
+  action icon). With `notify.appIconFirst` on, a glyph is replaced by the
+  desktop entry's icon when that icon is colour artwork. The card then drops
+  the badge and the round avatar mask (`IconInfo.prefersApp`). An app with no
+  desktop entry, or with a glyph for its own icon, keeps the tinted glyph.
+- **Clear all.** macOS draws nothing under its banners: a stack is cleared
+  with its own close button, and clear-all lives in Notification Centre. The
+  macOS themes set `notify.clearAll` to false.
 
 The centre cards (`entry.*`) and the OSD use the same material as the banner,
 as they do on macOS. The centre's backing sheet (`panel.background`) is only a

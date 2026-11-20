@@ -321,7 +321,10 @@ Window {
             /* Live cards, not rows: a card fading out still has a row. Counted
                by rows, the pill outlived the cards it had just cleared by a
                quarter of a second, then jumped as they were removed. */
-            readonly property bool wanted: waiting || NotificationModel.liveCount >= 3
+            /* Not at all where the theme turns it off (notify.clearAll):
+               macOS draws nothing under its banners. */
+            readonly property bool wanted: Style.notifyClearAll
+                                           && (waiting || NotificationModel.liveCount >= 3)
             /* Shown once there has been a pile for a moment, not the instant
                there is one. A card arriving just as another expires makes
                three live cards for a frame or two; shown at once, the pill

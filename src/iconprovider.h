@@ -17,6 +17,7 @@
 #include <QColor>
 #include <QDir>
 #include <QFileInfo>
+#include <QHash>
 #include <QIcon>
 #include <QImageReader>
 #include <QQuickImageProvider>
@@ -49,19 +50,31 @@ public:
        back the old tint. */
     QPixmap requestPixmap(const QString &id, QSize *size, const QSize &requested) override
     {
-        const qsizetype mark = id.lastIndexOf(QLatin1String("?fg="));
-        if (mark < 0) {
-            return resolve(id, size, requested);
+        /* Parameters ride on the end of the id: "?app=" first (from the
+           model), then "?fg=" or "&fg=" (from Icons.themed()). Peeled off
+           from the right, so a name or path is never split. */
+        QString base = id;
+        const QString fgHex = takeParam(base, QStringLiteral("fg"));
+        const QString app = takeParam(base, QStringLiteral("app"));
+        const QColor fg = fgHex.isEmpty() ? QColor() : QColor(QLatin1Char('#') + fgHex);
+
+        /* "?app=<the sender's desktop-entry icon>": the notification named a
+           monochrome glyph, and the theme would rather show the app that sent
+           it, in colour, as macOS does. Decided by the same cached test the
+           card uses (prefersApp), so the two never disagree. */
+        if (!app.isEmpty() && isGlyph(base) && isArtwork(app)) {
+            return resolve(app, size, requested, /*fallback=*/false);
         }
-        const QColor fg(QLatin1Char('#') + id.mid(mark + 4));
-        QPixmap pm = resolve(id.left(mark), size, requested);
-        if (!fg.isValid() || pm.isNull()) {
+
+        QPixmap pm = resolve(base, size, requested);
+        if (pm.isNull() || !fg.isValid()) {
             return pm;
         }
         QImage img = pm.toImage().convertToFormat(QImage::Format_ARGB32);
         if (!isFlatColour(img)) {
             return pm;
         }
+
         const QRgb rgb = fg.rgb() & 0x00ffffff;
         for (int y = 0; y < img.height(); ++y) {
             auto *line = reinterpret_cast<QRgb *>(img.scanLine(y));
@@ -73,6 +86,49 @@ public:
         out.setDevicePixelRatio(pm.devicePixelRatio());
         return out;
     }
+
+    /* Removes "?key=value" or "&key=value" from the end of id and returns
+       value, or returns empty and leaves id alone. */
+    static QString takeParam(QString &id, const QString &key)
+    {
+        for (const QChar sep : {QLatin1Char('&'), QLatin1Char('?')}) {
+            const QString mark = sep + key + QLatin1Char('=');
+            const qsizetype at = id.lastIndexOf(mark);
+            if (at < 0) {
+                continue;
+            }
+            const QString value = id.mid(at + mark.size());
+            if (value.contains(QLatin1Char('&')) || value.contains(QLatin1Char('?'))) {
+                continue;   // not the last parameter: leave it for a later call
+            }
+            id.truncate(at);
+            return value;
+        }
+        return {};
+    }
+
+    /* Whether an image://icon URL carrying "?app=" will be drawn as the
+       app's icon rather than its own: its own resolves to a one-colour glyph
+       (mail-message, view-calendar-upcoming-events) and the app's to colour
+       artwork. An app whose own icon is a glyph, or is missing, keeps the
+       glyph the notification sent. The card asks too (IconInfo), so it can
+       drop the badge and the avatar mask that the glyph alone would get. */
+    static bool prefersApp(const QString &url)
+    {
+        QString base = url;
+        if (base.startsWith(QLatin1String("image://icon/"))) {
+            base.remove(0, 13);
+        }
+        takeParam(base, QStringLiteral("fg"));
+        const QString app = takeParam(base, QStringLiteral("app"));
+        return !app.isEmpty() && isGlyph(base) && isArtwork(app);
+    }
+
+    /* Both cached per name for the process: rendering an icon to look at its
+       pixels is cheap once and pointless twice, and icon themes do not
+       change under a running daemon often enough to matter. */
+    static bool isGlyph(const QString &name) { return classify(name) == Kind::Glyph; }
+    static bool isArtwork(const QString &name) { return classify(name) == Kind::Artwork; }
 
     /* One colour, give or take antialiasing: every pixel that is more than
        faintly visible lies within a small box in RGB. A full-colour icon
@@ -103,7 +159,23 @@ public:
     }
 
 private:
-    QPixmap resolve(const QString &id, QSize *size, const QSize &requested)
+    enum class Kind { Missing, Glyph, Artwork };
+    static Kind classify(const QString &name)
+    {
+        static QHash<QString, Kind> cache;
+        const auto hit = cache.constFind(name);
+        if (hit != cache.constEnd()) {
+            return *hit;
+        }
+        const QPixmap pm = resolve(name, nullptr, QSize(32, 32), /*fallback=*/false);
+        const Kind k = pm.isNull() ? Kind::Missing
+                     : isFlatColour(pm.toImage().convertToFormat(QImage::Format_ARGB32)) ? Kind::Glyph
+                                                                                        : Kind::Artwork;
+        cache.insert(name, k);
+        return k;
+    }
+
+    static QPixmap resolve(const QString &id, QSize *size, const QSize &requested, bool fallback = true)
     {
         /* Every step of the chain, because each one has been the answer at
            least once and a missing icon is silent otherwise.
@@ -147,6 +219,9 @@ private:
         QIcon icon = QDir::isAbsolutePath(path) ? QIcon() : QIcon::fromTheme(id);
         if (icon.isNull() && id.endsWith(QLatin1String("-symbolic"))) {
             icon = QIcon::fromTheme(id.chopped(9));
+        }
+        if (icon.isNull() && !fallback) {
+            return {};
         }
         if (icon.isNull()) {
             icon = QIcon::fromTheme(QStringLiteral("dialog-information"));

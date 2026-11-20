@@ -121,6 +121,28 @@ QtObject {
        a banner's title to one line; 2 is the default the other themes were
        drawn with. The body and an opened card have their own limits. */
     readonly property int notifyTitleLines: Math.max(1, Math.round(tnum("text.titleLines", 2)))
+    /* Letter-spacing for the card's title and body, in em (−0.02 = −2%).
+       Apple's kit tracks SF Pro tighter than its default: title −2%, body
+       −0.8%. Inter is wider still, so without it a line wraps where macOS's
+       would not. 0 = the font's own spacing. */
+    readonly property real notifyTitleTracking: tnum("font.notifyTitleTracking", 0)
+    readonly property real notifyBodyTracking: tnum("font.notifyBodyTracking", 0)
+    /* The same, in the pixels font.letterSpacing takes: em times the size
+       the card's title and body are drawn at (px token, else points). Here,
+       not on the Text: reading font.pointSize there is a binding loop. */
+    readonly property real notifyTitleSpacing: notifyTitleTracking
+        * (notifyTextPx > 0 ? notifyTextPx : notifyFontSize / 0.75)
+    readonly property real notifyBodySpacing: notifyBodyTracking
+        * (notifyTextPx > 0 ? notifyTextPx : (notifyFontSize - 1) / 0.75)
+    /* Show the sending app's colour icon where a notification names a
+       monochrome theme glyph (mail-message, a calendar action icon). macOS
+       always draws the app's icon on a banner. Off by default: other themes
+       keep the glyph, tinted to the surface. */
+    readonly property bool notifyAppIconFirst: tflag("notify.appIconFirst", false)
+    /* The "Clear all" pill under a pile of banners. macOS has none there (a
+       stack is cleared with its own close button, clear-all lives in the
+       centre), so a macOS theme turns it off. */
+    readonly property bool notifyClearAll: tflag("notify.clearAll", true)
     /* The point-size scheme's base, for text on the card that has no px token
        (the reply field, action buttons, the menu). */
     readonly property int notifyFontSize: Math.max(6, Math.round(fontSize * ns))

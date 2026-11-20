@@ -4,6 +4,7 @@
     SPDX-License-Identifier: GPL-2.0-or-later
 */
 #include "notificationmodel.h"
+#include "desktopentry.h"
 
 #include "soundplayer.h"
 
@@ -256,7 +257,7 @@ QVariant NotificationModel::roleFor(const Notification &n, int role) const
         if (n.image.isValid()) {
             return QStringLiteral("image://notifyimage/%1/%2").arg(n.id).arg(n.imageRev);
         }
-        return n.appIcon.isEmpty() ? QString() : QStringLiteral("image://icon/") + n.appIcon;
+        return notificationIconUrl(n.appIcon, n.desktopEntry);
     default:
         return {};
     }

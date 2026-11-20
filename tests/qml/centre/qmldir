@@ -10,6 +10,7 @@ singleton Surface 1.0 Surface.qml
 singleton Appearance 1.0 Appearance.qml
 singleton Modules 1.0 Modules.qml
 singleton Theme 1.0 Theme.qml
+singleton IconInfo 1.0 IconInfo.qml
 singleton SystemControls 1.0 SystemControls.qml
 HistoryPanel 1.0 HistoryPanel.qml
 CentreCard 1.0 CentreCard.qml

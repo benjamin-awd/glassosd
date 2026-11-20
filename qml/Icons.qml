@@ -207,11 +207,18 @@ QtObject {
        notification's picture, an empty source — is returned unchanged:
        ours are tinted by Glyph, and pictures are never touched. */
     function themed(src, color) {
-        const s = String(src || "")
+        let s = String(src || "")
         if (!s.startsWith("image://icon/"))
             return s
+        /* "?app=" is the sender's colour icon, which the provider shows in
+           place of a monochrome glyph. Kept only for themes that want the
+           app's icon first (notify.appIconFirst, as macOS draws every
+           banner); the rest get the glyph they always had. */
+        const app = s.indexOf("?app=")
+        if (app >= 0 && !Style.notifyAppIconFirst)
+            s = s.slice(0, app)
         const c = Qt.color(color)
         const hex = n => ("0" + Math.round(n * 255).toString(16)).slice(-2)
-        return s + "?fg=" + hex(c.r) + hex(c.g) + hex(c.b)
+        return s + (s.indexOf("?app=") >= 0 ? "&fg=" : "?fg=") + hex(c.r) + hex(c.g) + hex(c.b)
     }
 }

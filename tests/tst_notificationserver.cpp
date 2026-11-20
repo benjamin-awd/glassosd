@@ -633,6 +633,29 @@ private Q_SLOTS:
         /* No hint, no change: the OSD and everything else that never asks. */
         const QImage plain = provider.requestPixmap(glyph, nullptr, QSize(32, 32)).toImage();
         QCOMPARE(qRed(plain.pixel(10, 16)), 252);
+
+        /* ?app= (a macOS theme, notify.appIconFirst): a glyph gives way to
+           the sender's icon when that icon is artwork... */
+        const QImage swapped = provider.requestPixmap(glyph + QStringLiteral("?app=") + art
+                                                          + QStringLiteral("&fg=16181c"),
+                                                      nullptr, QSize(32, 32)).toImage();
+        QCOMPARE(QColor(swapped.pixel(16, 16)).green(), 200);
+
+        /* ...but not when the app's own icon is a glyph too, or missing:
+           then the notification's glyph is tinted as before. */
+        for (const QString &app : {glyph, QStringLiteral("no-such-icon-anywhere")}) {
+            const QImage still = provider.requestPixmap(glyph + QStringLiteral("?app=") + app
+                                                            + QStringLiteral("&fg=16181c"),
+                                                        nullptr, QSize(32, 32))
+                                     .toImage().convertToFormat(QImage::Format_ARGB32);
+            QCOMPARE(still.pixel(10, 16), qRgba(0x16, 0x18, 0x1c, 255));
+        }
+
+        /* Artwork the notification chose is never replaced. */
+        const QImage own = provider.requestPixmap(art + QStringLiteral("?app=") + glyph
+                                                      + QStringLiteral("&fg=16181c"),
+                                                  nullptr, QSize(32, 32)).toImage();
+        QCOMPARE(QColor(own.pixel(16, 0)).red(), 250);
     }
 };
 

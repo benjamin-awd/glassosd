@@ -10,6 +10,7 @@ singleton Appearance 1.0 Appearance.qml
 singleton Modules 1.0 Modules.qml
 singleton HistoryModel 1.0 HistoryModel.qml
 singleton Theme 1.0 Theme.qml
+singleton IconInfo 1.0 IconInfo.qml
 NotificationCard 1.0 NotificationCard.qml
 NotificationStack 1.0 NotificationStack.qml
 GlassPanel 1.0 GlassPanel.qml

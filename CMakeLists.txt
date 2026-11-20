@@ -130,6 +130,7 @@ qt_add_qml_module(glassosd
         src/soundplayer.h
         src/busywatcher.h
         src/systemcontrols.h
+        src/iconinfo.h
     RESOURCE_PREFIX /qt/qml
 )
 

@@ -952,6 +952,14 @@ Item {
                     /* A picture of the message's own (a contact's avatar) is
                        drawn as a circle, the way macOS shows a sender. */
                     readonly property bool isPicture: (root.entry.badgeSource || "") !== ""
+                                                      && !showsApp
+                    /* The theme swaps a glyph for the sender's colour icon
+                       (notify.appIconFirst). notify-send's -i arrives as
+                       image-path, so that glyph counted as a picture: masked
+                       round and badged with the very icon now drawn in its
+                       place. The app's icon is shown as itself. */
+                    readonly property bool showsApp: Style.notifyAppIconFirst
+                                                     && IconInfo.prefersApp(root.entry.iconSource)
                     visible: !isPicture
                 }
 
@@ -1050,6 +1058,7 @@ Item {
                                                                : Style.notifyFontSize
                         lineHeightMode: Style.notifyLinePx > 0 ? Text.FixedHeight : Text.ProportionalHeight
                         lineHeight: Style.notifyLinePx > 0 ? Style.notifyLinePx : 1.0
+                        font.letterSpacing: Style.notifyTitleSpacing
                         /* Bold belongs to the first line. With the app name
                            above it this one is the middle tier and sets in
                            regular, the way a mail subject does under its
@@ -1155,6 +1164,7 @@ Item {
                                                            : Style.notifyFontSize - 1
                     lineHeightMode: Style.notifyLinePx > 0 ? Text.FixedHeight : Text.ProportionalHeight
                     lineHeight: Style.notifyLinePx > 0 ? Style.notifyLinePx : 1.0
+                    font.letterSpacing: Style.notifyBodySpacing
                     wrapMode: Text.WordWrap
                     maximumLineCount: root.textOpen ? root.expandedLines : Appearance.bodyLines
                     elide: Text.ElideRight
