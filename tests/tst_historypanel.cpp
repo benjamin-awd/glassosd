@@ -127,6 +127,9 @@ class TestHistoryPanel : public QObject
         m_win->requestActivate();
         QVERIFY(QTest::qWaitForWindowActive(m_win));
         QTRY_VERIFY(list() && list()->property("count").toInt() == m_model->rowCount());
+        /* The centre slides in from the edge; clicks aimed at it before it
+           lands go to where it will be, not where it is. */
+        QTRY_COMPARE(m_win->property("openness").toReal(), 1.0);
     }
 
 private Q_SLOTS:

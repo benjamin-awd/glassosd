@@ -19,7 +19,63 @@ Window {
 
     flags: Qt.FramelessWindowHint
     color: "transparent"
-    visible: Modules.notificationCentre && HistoryModel.panelOpen
+    /* Kept up while the close slide runs, not just while the model says
+       open: hidden at once, the centre vanished in one frame instead of
+       sliding back off the edge as macOS's does. */
+    visible: wantOpen || openness > 0
+
+    readonly property bool wantOpen: Modules.notificationCentre && HistoryModel.panelOpen
+
+    /* How far the centre has slid in, 0..1. It used to have no motion at
+       all: the window was shown and hidden outright, so it popped on and
+       off while the banners beside it slid. Now it rides the same curves
+       and timings as a banner, from the screen edge it is anchored to.
+
+       Only the panel moves, through a Translate. Surface::recompute reads
+       live scene geometry on every afterAnimating, so the blur region
+       follows the transform on the frame it moves without any help. */
+    property real openness: 0.0
+    /* Off while snapping back to closed after the compositor closed us:
+       animated there, openness > 0 would hold the window up again. */
+    property bool snapping: false
+    Behavior on openness {
+        enabled: !win.snapping
+        NumberAnimation {
+            id: openAnim
+            duration: Style.animIn
+            easing.type: Style.curveIn.length ? Easing.BezierSpline : Easing.OutQuint
+            easing.bezierCurve: Style.curveIn
+        }
+    }
+
+    /* Started from the first frame on screen, one event-loop turn late
+       (as NotificationCard.startReveal is): started on show, the first
+       ~2 frames of the slide ran before the surface was mapped. */
+    property bool exposed: false
+    onFrameSwapped: if (!exposed) { exposed = true; if (wantOpen) Qt.callLater(slideIn) }
+    function slideIn() {
+        if (!wantOpen) return
+        openAnim.duration = Style.animIn
+        openAnim.easing.bezierCurve = Style.curveIn
+        openAnim.easing.type = Style.curveIn.length ? Easing.BezierSpline : Easing.OutQuint
+        openness = 1.0
+    }
+    onWantOpenChanged: {
+        if (wantOpen) {
+            /* Reopened mid-close: the window never went away, so there is
+               no new first frame to wait for. Carry on from where it is. */
+            if (exposed) Qt.callLater(slideIn)
+        } else {
+            openAnim.duration = Style.animOut
+            openAnim.easing.bezierCurve = Style.curveOut
+            openAnim.easing.type = Style.curveOut.length ? Easing.BezierSpline : Easing.InQuint
+            openness = 0.0
+        }
+        /* Keyboard goes with the intent, not the window: a centre that is
+           sliding away must not keep swallowing shortcuts for 250 ms. */
+        Surface.setKeyboardFocus(win, wantOpen)
+        if (wantOpen) panel.focusStart()
+    }
 
     Component.onCompleted: {
         /* Anchored on all four sides so the surface covers the screen: the
@@ -108,8 +164,14 @@ Window {
            the next toggle "closed" it, so it took two to open the centre. */
         if (!visible && HistoryModel.panelOpen)
             HistoryModel.panelOpen = false
-        Surface.setKeyboardFocus(win, visible)
-        if (visible)
+        if (!visible) {
+            exposed = false
+            snapping = true
+            openness = 0.0
+            snapping = false
+        }
+        Surface.setKeyboardFocus(win, visible && wantOpen)
+        if (visible && wantOpen)
             panel.focusStart()
         /* wpctl and brightnessctl are only queried while the centre is open;
            polling them for a panel nobody is looking at is waste.
@@ -141,6 +203,13 @@ Window {
         surfaceColor: Style.panelGlass
         glass: true
         shadow: true
+
+        /* Off the anchored edge when closed: its own width, the margin, and
+           the shadow, so not even the shadow's fringe is left on screen. */
+        transform: Translate {
+            x: (1.0 - win.openness) * (panel.width + Style.notifyMargin + Style.shadowPad)
+               * (Appearance.centreSide === 4 ? -1 : 1)
+        }
 
         Component.onCompleted: refreshBlur()
 
