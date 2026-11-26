@@ -85,6 +85,22 @@ private Q_SLOTS:
         QVERIFY(other.stackTag.isEmpty());
     }
 
+    /* A notification is not a file path: * has to cross '/', or no glob can
+       match a URL. Qt's default glob conversion stops * at a slash. */
+    void starCrossesSlashes()
+    {
+        const Rules r = loaded(QStringLiteral(
+            "[Rule meet]\n"
+            "appname=Slack\n"
+            "body=*meet.google.com/*\n"
+            "set_urgency=2\n"));
+
+        Notification n = note(QStringLiteral("Slack"), QStringLiteral("New message from Alex"),
+                              QStringLiteral("join https://meet.google.com/abc-defg-hij"));
+        r.apply(n);
+        QCOMPARE(int(n.urgency), 2);
+    }
+
     void matchingIsCaseInsensitive()
     {
         const Rules r = loaded(QStringLiteral(

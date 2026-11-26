@@ -18,8 +18,15 @@ std::optional<QRegularExpression> globOf(const KConfigGroup &g, const char *key)
         return std::nullopt;
     }
     /* Glob, not regex — "Device Battery Low*" from the existing dunstrc must
-       behave the way it does under dunst. */
-    return QRegularExpression(QRegularExpression::wildcardToRegularExpression(pattern),
+       behave the way it does under dunst.
+
+       NonPathWildcardConversion, because by default Qt converts a file-path
+       glob, where * stops at a '/'. dunst matches with fnmatch() and no
+       FNM_PATHNAME, so its * crosses slashes, and a notification is not a
+       path: "*meet.google.com/*" has to match a body containing
+       "https://meet.google.com/…", which the default never did. */
+    return QRegularExpression(QRegularExpression::wildcardToRegularExpression(
+                                  pattern, QRegularExpression::NonPathWildcardConversion),
                               QRegularExpression::CaseInsensitiveOption);
 }
 
