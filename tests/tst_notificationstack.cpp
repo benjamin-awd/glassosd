@@ -944,8 +944,12 @@ private Q_SLOTS:
             m_model->insert(x);
         }
         /* The first few arrive as cards of their own before they coalesce;
-           wait for those to leave rather than for a fixed time. */
-        QTest::qWaitFor([this] { return cards().size() == 1; }, 3000);
+           wait for those to leave rather than for a fixed time. A group
+           that never forms is null, which every caller QVERIFYs, rather than
+           whichever lone card happened to be first. */
+        if (!QTest::qWaitFor([this] { return cards().size() == 1; }, 3000)) {
+            return nullptr;
+        }
         waitSettled();
         return cards().value(0);
     }
@@ -1017,6 +1021,7 @@ private Q_SLOTS:
     void aMemberIsLive()
     {
         QQuickItem *card = groupOf(4, QStringLiteral("Mail"), true);
+        QVERIFY(card);
         card->setProperty("groupOpen", true);
         QTRY_COMPARE(card->property("groupProgress").toReal(), 1.0);
         QCOMPARE(card->property("groupMembers").toList().size(), 3);
@@ -1045,6 +1050,7 @@ private Q_SLOTS:
     void clearingAGroupClearsEverything()
     {
         QQuickItem *card = groupOf(3, QStringLiteral("News"));
+        QVERIFY(card);
         card->setProperty("groupOpen", true);
         QTRY_COMPARE(card->property("groupProgress").toReal(), 1.0);
         QSignalSpy closed(m_model, &NotificationModel::notificationClosed);
@@ -1074,6 +1080,7 @@ private Q_SLOTS:
     void aClickOpensRatherThanExpanding()
     {
         QQuickItem *card = groupOf(3, QStringLiteral("Feed"));
+        QVERIFY(card);
         QSignalSpy closed(m_model, &NotificationModel::notificationClosed);
         QTest::mouseMove(m_win, drawn(card).center().toPoint());
         QTest::mouseClick(m_win, Qt::LeftButton, Qt::NoModifier, drawn(card).center().toPoint());
@@ -1087,6 +1094,7 @@ private Q_SLOTS:
     void aBigGroupLinksToTheCentre()
     {
         QQuickItem *card = groupOf(9, QStringLiteral("Bulk"));
+        QVERIFY(card);
         card->setProperty("groupOpen", true);
         QTRY_COMPARE(card->property("groupProgress").toReal(), 1.0);
         QCOMPARE(card->property("groupMembers").toList().size(), 5);
